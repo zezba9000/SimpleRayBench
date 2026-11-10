@@ -18,9 +18,7 @@ int main()
 	std::chrono::duration<double> sec = end - start;
 	std::cout << "Render Time: " << sec.count() << "s" << std::endl;
 
-	// NOTE: enable this to save raw RGB image data
 	Utils::SaveMovieData_PPM("image.ppm", movie);
-
 	Benchmark::Dispose();
 
 	return 0;
