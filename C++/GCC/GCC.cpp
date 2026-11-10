@@ -9,8 +9,8 @@ using namespace SimpleRayBench;
 
 int main()
 {
-	const int size = 1024 * 2;// image size
-	Benchmark::Init(size, size);
+	const int size = 512;// image size
+	Benchmark::Init(size, size, 100);
 
 	auto start = std::chrono::high_resolution_clock::now();
 	auto movie = Benchmark::Render(false);// run benchmark
@@ -19,9 +19,7 @@ int main()
 	std::cout << "Render Time: " << sec.count() << "s" << std::endl;
 
 	// NOTE: enable this to save raw RGB image data
-	/*int imageDataLength;
-	auto imageData = Utils::ConvertRawImageSDR(movie->frames[0], &imageDataLength);
-	Utils::SaveImageData("image.rgb", imageData, imageDataLength);*/
+	Utils::SaveMovieData_PPM("image.ppm", movie);
 
 	Benchmark::Dispose();
 
