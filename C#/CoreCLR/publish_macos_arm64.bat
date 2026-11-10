@@ -1,0 +1,1 @@
+dotnet publish CoreCLR.sln --os osx -a arm64 -c release --self-contained true
