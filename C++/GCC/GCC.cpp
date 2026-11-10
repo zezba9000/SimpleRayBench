@@ -24,4 +24,6 @@ int main()
 	Utils::SaveImageData("image.rgb", imageData, imageDataLength);*/
 
 	Benchmark::Dispose();
+
+	return 0;
 }

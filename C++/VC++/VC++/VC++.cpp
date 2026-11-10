@@ -24,4 +24,6 @@ int main()
 	Utils::SaveMovieData_PPM("image.ppm", movie);
 
 	Benchmark::Dispose();
+
+	return 0;
 }
