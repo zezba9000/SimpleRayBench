@@ -1,0 +1,1 @@
+dotnet publish CoreCLR.slnx --os win -a x86 -c release --self-contained true

@@ -1,1 +1,1 @@
-dotnet publish CoreCLR.sln --os linux -a x64 -c release --self-contained true
+dotnet publish CoreCLR.slnx --os linux -a x64 -c release --self-contained true

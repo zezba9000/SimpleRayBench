@@ -1,0 +1,1 @@
+dotnet publish CoreCLR.slnx --os linux -a arm64 -c release --self-contained true -p:PublishAot=true
