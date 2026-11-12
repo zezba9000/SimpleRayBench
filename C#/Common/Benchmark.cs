@@ -349,7 +349,7 @@ namespace SimpleRayBench
 		}
 	}
 
-	sealed class DirectionalLight
+	class DirectionalLight
 	{
 		public Vec3 direction;
 		public Color color;
