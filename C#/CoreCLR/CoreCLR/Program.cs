@@ -8,7 +8,7 @@ namespace SimpleRayBench
 		static void Main(string[] args)
 		{
 			const int size = 512;
-			Benchmark.Init(size, size, 100);
+			Benchmark.Init(size, size, 1);
 
 			var watch = new Stopwatch();
 			watch.Start();

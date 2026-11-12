@@ -1,11 +1,9 @@
 ﻿#define NUM32
 //#define NUM64
-//#define FOG_BASIC
 
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Runtime.InteropServices;
 
 #if NUM32
 using Num = System.Single;
@@ -197,6 +195,42 @@ namespace SimpleRayBench
 			this.origin = origin;
 			this.direction = direction;
 		}
+		
+		public bool HitSphere(Vec3 sphereCenter, Num sphereRadius, out HitInfo info)
+		{
+			// if ray pointing wrong direction ignore
+			if (direction.Dot(origin - sphereCenter) >= 0)
+			{
+				info = new HitInfo();
+				return false;
+			}
+
+			// compute
+			Vec3 d = origin - sphereCenter;
+			Num a = direction.Dot(direction);
+			Num b = d.Dot(direction);
+			Num c = d.Dot() - sphereRadius * sphereRadius;
+
+			// if ray not pointing at object ignore
+			Num disc = b * b - a * c;
+			if (disc < 0)
+			{
+				info = new HitInfo();
+				return false;
+			}
+
+			// compute
+			Num sqrtDisc = MATH.Sqrt(disc);
+			Num invA = 1 / a;
+			Num t1 = (-b - sqrtDisc) * invA;
+			//Num t2 = (-b + sqrtDisc) * invA;
+			
+			info.point = origin + t1 * direction;
+			//info.point = origin + t2 * direction;
+			info.normal = (info.point - sphereCenter).Normalize();
+
+			return true;
+		}
 	}
 
 	struct HitInfo
@@ -235,7 +269,8 @@ namespace SimpleRayBench
 
 		public override bool Hit(in Ray ray, out HitInfo info)
 		{
-			// if ray pointing wrong direction ignore
+			return ray.HitSphere(center, radius, out info);
+			/*// if ray pointing wrong direction ignore
 			if (ray.direction.Dot(ray.origin - center) >= 0)
 			{
 				info = new HitInfo();
@@ -266,7 +301,7 @@ namespace SimpleRayBench
 			//info.point = ray.origin + t2 * ray.direction;
 			info.normal = (info.point - center).Normalize();
 
-			return true;
+			return true;*/
 		}
 	}
 
@@ -348,18 +383,18 @@ namespace SimpleRayBench
 			this.up = up.Normalize();
 		}
 	}
-
-	class DirectionalLight
+	
+	class PointLight
 	{
-		public Vec3 direction;
+		public Vec3 position;
+		public Num radius;
 		public Color color;
-		public Num softness;
-
-		public DirectionalLight(Vec3 direction, Color color, Num softness)
+		
+		public PointLight(Vec3 position, Num radius, Color color)
 		{
-			this.direction = direction.Normalize();
+			this.position = position;
+			this.radius = radius;
 			this.color = color;
-			this.softness = softness;
 		}
 	}
 
@@ -382,14 +417,13 @@ namespace SimpleRayBench
 		const Num volumeFogStep = .01f;// how little the shadow volume testing step is
 		const Num fogDensity = .4f;// how dense the fog is
 		const Num fogFalloff = 1;
-		static Color fogColor = new Color(.25f, .25f, .25f);
 
 		static int width, height, frames;
 		static RawMovie movie;
 		static Camera camera;
 		static Obj[] objects;
 		static Color ambientLight;
-		static DirectionalLight[] directionalLights;
+		static PointLight[] pointLights;
 
 		static RenderThreadData[] threadDatas;
 		static Thread[] threads;
@@ -418,9 +452,9 @@ namespace SimpleRayBench
 
 			// init scene lights
 			ambientLight = new Color(.05f, .05f, .05f);
-			directionalLights = new DirectionalLight[]
+			pointLights = new PointLight[]
 			{
-				new	DirectionalLight(new Vec3(.25f, -1, -.25f), new Color(1, 1, 1), .025f * shadowSoftnessMul)
+				new PointLight(new Vec3(.1f, .75f, -2), .01f, new Color(1, 1, 1) * 5)
 			};
 
 			// start threads
@@ -526,8 +560,7 @@ namespace SimpleRayBench
 
 		private static void UpdateMovieObjects(int frame)
 		{
-			float r = frame * .1f;
-			directionalLights[0].direction = new Vec3(MathF.Cos(r), -1, MathF.Sin(r)).Normalize();
+			//float r = frame * .1f;
 		}
 
 		private static void RenderThread(object dataObj)
@@ -594,6 +627,29 @@ namespace SimpleRayBench
 					}
 				}
 			}
+			
+			// hit point light orb
+			for (int l = 0; l != pointLights.Length; ++l)
+			{
+				PointLight closestLight = null;
+				var pointLight = pointLights[l];
+				if (ray.HitSphere(pointLight.position, pointLight.radius, out var info))
+				{
+					Num dis = (ray.origin - info.point).Length();
+					if (dis < closestDis)
+					{
+						closestDis = dis;
+						closestLight = pointLight;
+						closestInfo = info;
+					}
+				}
+				
+				if (closestLight != null)
+				{
+					light = closestLight.color;
+					return true;
+				}
+			}
 
 			// process lighting
 			if (closestObject != null)
@@ -631,50 +687,41 @@ namespace SimpleRayBench
 				reflectedLight /= diffusePasses;
 				Num fresnel = 1 - Vec3.FresnelSchlickZero(ray.direction, closestInfo.normal);
 				light += Color.Lerp(reflectedLight, reflectedLight * closestObject.color, closestObject.metalic * fresnel) * closestObject.reflectiveness;
-
-				// fog
-				#if FOG_BASIC
-				// basic fog just uses fog color directly
-				light = Color.LerpClamp(light, fogColor, MATH.Pow(closestDis, fogFalloff) * fogDensity);
-				#else
+				
 				// volume fog tracing taking into account shadows
 				var fogPos = ray.origin;
 				var fogStep = ray.direction * volumeFogStep;
-				Num fogDis = 0;
-				Num fogLitDis = 0;
-				Num closestFogDis = closestDis;
-				for (int i = 0; i != maxVolumeFogSteps; ++i)
+				for (int l = 0; l != pointLights.Length; ++l)
 				{
-					fogPos += fogStep;
-					fogDis += volumeFogStep;
-					if (!IsInShadow(fogPos, randomVec)) fogLitDis += volumeFogStep;
-					if (i == maxVolumeFogSteps - 1) closestFogDis = (maxVolumeFogSteps * volumeFogStep);
-					if (fogDis > closestDis) break;
+					Num fogBrightness = 0;
+					var pointLight = pointLights[l];
+					for (int i = 0; i != maxVolumeFogSteps; ++i)
+					{
+						fogPos += fogStep;
+						if (!IsInShadow(pointLight, fogPos, randomVec, out var lightDis, out var lightRay)) fogBrightness += 1 / MATH.Pow(lightDis + 1, 4);
+					}
+					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
-				Color fogColorValue = fogColor * (fogLitDis / closestFogDis);
-				light = Color.LerpClamp(light, fogColorValue, MATH.Pow(closestDis, fogFalloff) * fogDensity);
-				#endif
 				
 				return true;
 			}
-			#if FOG_BASIC
-			light += fogColor;
-			#else
 			else
 			{
 				// volume fog tracing taking into account shadows (optimized for when nothing is hit)
 				var fogPos = ray.origin;
 				var fogStep = ray.direction * volumeFogStep;
-				Num fogLitDis = 0;
-				for (int i = 0; i != maxVolumeFogSteps; ++i)
+				for (int l = 0; l != pointLights.Length; ++l)
 				{
-					fogPos += fogStep;
-					if (!IsInShadow(fogPos, randomVec)) fogLitDis += volumeFogStep;
+					Num fogBrightness = 0;
+					var pointLight = pointLights[l];
+					for (int i = 0; i != maxVolumeFogSteps; ++i)
+					{
+						fogPos += fogStep;
+						if (!IsInShadow(pointLight, fogPos, randomVec, out var lightDis, out var lightRay)) fogBrightness += 1 / MATH.Pow(lightDis + 1, 4);
+					}
+					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
-				Color fogColorValue = fogColor * (fogLitDis / (maxVolumeFogSteps * volumeFogStep));
-				light = Color.LerpClamp(light, fogColorValue, MATH.Pow(closestDis, fogFalloff) * fogDensity);
 			}
-			#endif
 
 			// hit nothing
 			return false;
@@ -686,45 +733,44 @@ namespace SimpleRayBench
 
 			// ambient
 			light += objColor * ambientLight;
-
-			// directional
-			bool inShadow = false;
-			foreach (var l in directionalLights)
+			
+			// point
+			for (int l = 0; l != pointLights.Length; ++l)
 			{
-				// in object shadow
-				foreach (var o in objects)
-				{
-					if (o == obj) continue;
-					var softDir = -l.direction + (randomVec * l.softness);
-					var shadowRay = new Ray(info.point, softDir.Normalize());
-					if (o.Hit(shadowRay, out var shadowInfo))
-					{
-						inShadow = true;
-						break;
-					}
-				}
-
+				var pointLight = pointLights[l];
+				
 				// diffuse
-				if (!inShadow)
+				if (!IsInShadow(pointLights[l], info.point, randomVec, out var lightDis, out var lightRay))
 				{
-					Num d = MATH.Max(info.normal.Dot(-l.direction), 0);
-					light += objColor * l.color * d;
+					Num d = MATH.Max(info.normal.Dot(lightRay.direction), 0);
+					d /= MATH.Pow(lightDis + 1, 4);
+					light += objColor * pointLight.color * d;
 				}
 			}
 		}
 
-		static bool IsInShadow(in Vec3 point, in Vec3 randomVec)
+		static bool IsInShadow(in Vec3 point, in Vec3 randomVec, out Num lightDis, out Ray lightRay)
 		{
-			foreach (var l in directionalLights)
+			for (int l = 0; l != pointLights.Length; ++l)
 			{
-				foreach (var o in objects)
+				if (IsInShadow(pointLights[l], point, randomVec, out lightDis, out lightRay)) return true;
+			}
+			
+			lightDis = 0;
+			lightRay = new Ray();
+			return false;
+		}
+		
+		static bool IsInShadow(PointLight pointLight, in Vec3 point, in Vec3 randomVec, out Num lightDis, out Ray lightRay)
+		{
+			var softVec = (pointLight.position + (randomVec * pointLight.radius)) - point;
+			lightDis = softVec.Length();
+			lightRay = new Ray(point, softVec.Normalize());
+			foreach (var o in objects)
+			{
+				if (o.Hit(lightRay, out var hitInfo))
 				{
-					var softDir = -l.direction + (randomVec * l.softness);
-					var shadowRay = new Ray(point, softDir.Normalize());
-					if (o.Hit(shadowRay, out var shadowInfo))
-					{
-						return true;
-					}
+					return true;
 				}
 			}
 			return false;
