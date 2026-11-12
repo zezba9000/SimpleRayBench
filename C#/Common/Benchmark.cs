@@ -1,5 +1,6 @@
 ﻿#define NUM32
 //#define NUM64
+//#define DISABLE_FOG
 
 using System;
 using System.Runtime.CompilerServices;
@@ -17,6 +18,8 @@ namespace SimpleRayBench
 {
 	static class RandomUtil
 	{
+		private static float offsetX, offsetY;
+		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static Num NextValue(Num u, Num v)
 		{
@@ -24,6 +27,11 @@ namespace SimpleRayBench
 			const Num randoValueY = 78.233f;
 			const Num randoValueZ = 43758.543123f;
 
+			u += offsetX;
+			v += offsetY;
+			offsetX += .5f;
+			offsetY += .75f;
+			
 			Num result = (u * randoValueX) + (v * randoValueY);
 			result = MATH.Sin(result) * randoValueZ;
 			return result - MATH.Floor(result);
@@ -178,11 +186,27 @@ namespace SimpleRayBench
 		{
 			return this - (planeNormal * this.Dot(planeNormal) * 2);
 		}
+		
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public Vec3 Cross(Vec3 vector)
+		{
+			return new Vec3(((y*vector.z) - (z*vector.y)), ((z*vector.x) - (x*vector.z)), ((x*vector.y) - (y*vector.x)));
+		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static Num FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 		{
 			return MATH.Pow(1 - MATH.Max((-rayDirection).Dot(normal), 0), 5);
+		}
+	}
+	
+	struct Mat3
+	{
+		public Vec3 x, y, z;
+		
+		public Vec3 Transform(Vec3 v)
+		{
+			return (x*v.x) + (y*v.y) + (z*v.z);
 		}
 	}
 
@@ -270,38 +294,6 @@ namespace SimpleRayBench
 		public override bool Hit(in Ray ray, out HitInfo info)
 		{
 			return ray.HitSphere(center, radius, out info);
-			/*// if ray pointing wrong direction ignore
-			if (ray.direction.Dot(ray.origin - center) >= 0)
-			{
-				info = new HitInfo();
-				return false;
-			}
-
-			// compute
-			Vec3 d = ray.origin - center;
-			Num a = ray.direction.Dot(ray.direction);
-			Num b = d.Dot(ray.direction);
-			Num c = d.Dot() - radius * radius;
-
-			// if ray not pointing at object ignore
-			Num disc = b * b - a * c;
-			if (disc < 0)
-			{
-				info = new HitInfo();
-				return false;
-			}
-
-			// compute
-			Num sqrtDisc = MATH.Sqrt(disc);
-			Num invA = 1 / a;
-			Num t1 = (-b - sqrtDisc) * invA;
-			//Num t2 = (-b + sqrtDisc) * invA;
-			
-			info.point = ray.origin + t1 * ray.direction;
-			//info.point = ray.origin + t2 * ray.direction;
-			info.normal = (info.point - center).Normalize();
-
-			return true;*/
 		}
 	}
 
@@ -375,12 +367,24 @@ namespace SimpleRayBench
 	class Camera
 	{
 		public Vec3 position, forward, up;
+		public Mat3 matrix;
 
 		public Camera(Vec3 position, Vec3 forward, Vec3 up)
 		{
 			this.position = position;
 			this.forward = forward.Normalize();
 			this.up = up.Normalize();
+			Update();
+		}
+		
+		public void Update()
+		{
+			var f = forward.Normalize();
+			var r = up.Cross(f).Normalize();
+			var u = f.Cross(r);
+			matrix.x = r;
+			matrix.y = up;
+			matrix.z = f;
 		}
 	}
 	
@@ -390,11 +394,17 @@ namespace SimpleRayBench
 		public Num radius;
 		public Color color;
 		
-		public PointLight(Vec3 position, Num radius, Color color)
+		public Vec3 rotPos;
+		public Num rotSpeed;
+		
+		public PointLight(Vec3 position, Num radius, Color color, Num rotSpeed)
 		{
 			this.position = position;
 			this.radius = radius;
 			this.color = color;
+			
+			rotPos = position;
+			this.rotSpeed = rotSpeed;
 		}
 	}
 
@@ -408,13 +418,12 @@ namespace SimpleRayBench
 
 	public static class Benchmark
 	{
-		const int diffusePasses = 1;// use to set multi-pass diffuse blending
 		const int maxBounceCount = 10;// how many ray-bounces are allowed
 		const Num roughnessMul = 1;// force tween material value
 		const Num shadowSoftnessMul = 1;// force tween shadow value
 
-		const int maxVolumeFogSteps = 500;// how far can we test the shadow volume for
-		const Num volumeFogStep = .01f;// how little the shadow volume testing step is
+		const int maxVolumeFogSteps = 250 / 4;// how far can we test the shadow volume for
+		const Num volumeFogStep = .01f * 4;// how little the shadow volume testing step is
 		const Num fogDensity = .4f;// how dense the fog is
 		const Num fogFalloff = 1;
 
@@ -438,7 +447,7 @@ namespace SimpleRayBench
 			movie = new RawMovie(width, height, frames);
 
 			// init camera
-			camera = new Camera(new Vec3(0, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 1, 0));
+			camera = new Camera(new Vec3(0, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 1, 0));
 
 			// init scene objects
 			objects = new Obj[]
@@ -454,7 +463,7 @@ namespace SimpleRayBench
 			ambientLight = new Color(.05f, .05f, .05f);
 			pointLights = new PointLight[]
 			{
-				new PointLight(new Vec3(.1f, .75f, -2), .01f, new Color(1, 1, 1) * 5)
+				new PointLight(new Vec3(.1f, .75f, -2), .01f, new Color(1, 1, 1) * 5, 3)
 			};
 
 			// start threads
@@ -514,6 +523,7 @@ namespace SimpleRayBench
 						for (int x = 0; x != width; ++x)
 						{
 							ray.direction = new Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
+							ray.direction = camera.matrix.Transform(ray.direction);
 
 							// generate shared random vector
 							Num randomVal = RandomUtil.NextValue(x / widthRange, y / heightRange);
@@ -560,7 +570,19 @@ namespace SimpleRayBench
 
 		private static void UpdateMovieObjects(int frame)
 		{
-			//float r = frame * .1f;
+			Num rot = frame * .1f;
+			for (int l = 0; l != pointLights.Length; ++l)
+			{
+				var pointLight = pointLights[l];
+				Num r = rot * pointLight.rotSpeed;
+				pointLight.position = pointLight.rotPos + new Vec3(MATH.Cos(r), MATH.Sin(r), MATH.Sin(r)) * .1f;
+			}
+			
+			Num c = -rot * .5f;
+			var center = new Vec3(0, 0, -2);
+			camera.position = center + new Vec3(MATH.Sin(c), 0, -MATH.Cos(c)) * 2;
+			camera.forward = -(center - camera.position).Normalize();
+			camera.Update();
 		}
 
 		private static void RenderThread(object dataObj)
@@ -586,6 +608,7 @@ namespace SimpleRayBench
 					for (int x = data.x; x < data.xEnd; ++x)
 					{
 						ray.direction = new Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
+						ray.direction = camera.matrix.Transform(ray.direction);
 
 						// generate shared random vector
 						Num randomVal = RandomUtil.NextValue(x / widthRange, y / heightRange);
@@ -631,8 +654,8 @@ namespace SimpleRayBench
 			// hit point light orb
 			for (int l = 0; l != pointLights.Length; ++l)
 			{
-				PointLight closestLight = null;
 				var pointLight = pointLights[l];
+				PointLight closestLight = null;
 				if (ray.HitSphere(pointLight.position, pointLight.radius, out var info))
 				{
 					Num dis = (ray.origin - info.point).Length();
@@ -662,52 +685,47 @@ namespace SimpleRayBench
 				var reflectedClosestInfo = closestInfo;
 				var reflectedRay = ray;
 
-				// diffuse light
-				var diffuseLight = new Color();
+				// diffuse surface normal
+				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * closestObject.roughness) / (closestDis + 1));
+				reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
+				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
+
+				// gather surface light
+				GatherLight(closestObject, reflectedClosestInfo, ref light, randomVec);
+
+				// trace from this reflected path
+				maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 				var reflectedLight = new Color();
-				for (int i = 0; i != diffusePasses; ++i)
-				{
-					// diffuse surface normal
-					reflectedClosestInfo.normal = closestInfo.normal + (randomVec * closestObject.roughness);
-					reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
-					reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
-
-					// gather surface light
-					GatherLight(closestObject, reflectedClosestInfo, ref diffuseLight, randomVec);
-
-					// trace from this reflected path
-					maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
-					Trace(reflectedRay, ref reflectedLight, ref maxBounce, randomVec);
-				}
-
-				// material (diffuse)
-				light = diffuseLight / diffusePasses;
+				Trace(reflectedRay, ref reflectedLight, ref maxBounce, randomVec);
 
 				// material (reflection)
-				reflectedLight /= diffusePasses;
 				Num fresnel = 1 - Vec3.FresnelSchlickZero(ray.direction, closestInfo.normal);
 				light += Color.Lerp(reflectedLight, reflectedLight * closestObject.color, closestObject.metalic * fresnel) * closestObject.reflectiveness;
 				
 				// volume fog tracing taking into account shadows
+				#if !DISABLE_FOG
 				var fogPos = ray.origin;
 				var fogStep = ray.direction * volumeFogStep;
+				int maxVolumeFogStepsClamped = (int)MATH.Min(closestDis / volumeFogStep, maxVolumeFogSteps);
 				for (int l = 0; l != pointLights.Length; ++l)
 				{
 					Num fogBrightness = 0;
 					var pointLight = pointLights[l];
-					for (int i = 0; i != maxVolumeFogSteps; ++i)
+					for (int i = 0; i != maxVolumeFogStepsClamped; ++i)
 					{
 						fogPos += fogStep;
 						if (!IsInShadow(pointLight, fogPos, randomVec, out var lightDis, out var lightRay)) fogBrightness += 1 / MATH.Pow(lightDis + 1, 4);
 					}
 					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
+				#endif
 				
 				return true;
 			}
 			else
 			{
 				// volume fog tracing taking into account shadows (optimized for when nothing is hit)
+				#if !DISABLE_FOG
 				var fogPos = ray.origin;
 				var fogStep = ray.direction * volumeFogStep;
 				for (int l = 0; l != pointLights.Length; ++l)
@@ -721,6 +739,7 @@ namespace SimpleRayBench
 					}
 					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
+				#endif
 			}
 
 			// hit nothing
