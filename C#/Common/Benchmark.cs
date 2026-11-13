@@ -379,12 +379,12 @@ namespace SimpleRayBench
 		
 		public void Update()
 		{
-			var f = forward.Normalize();
-			var r = up.Cross(f).Normalize();
+			var f = -forward;
+			var r = up.Cross(f);
 			var u = f.Cross(r);
-			matrix.x = r;
-			matrix.y = up;
-			matrix.z = f;
+			matrix.x = r.Normalize();
+			matrix.y = u.Normalize();
+			matrix.z = f.Normalize();
 		}
 	}
 	
@@ -420,12 +420,9 @@ namespace SimpleRayBench
 	{
 		const int maxBounceCount = 10;// how many ray-bounces are allowed
 		const Num roughnessMul = 1;// force tween material value
-		const Num shadowSoftnessMul = 1;// force tween shadow value
 
 		const int maxVolumeFogSteps = 250 / 4;// how far can we test the shadow volume for
 		const Num volumeFogStep = .01f * 4;// how little the shadow volume testing step is
-		const Num fogDensity = .4f;// how dense the fog is
-		const Num fogFalloff = 1;
 
 		static int width, height, frames;
 		static RawMovie movie;
@@ -463,7 +460,10 @@ namespace SimpleRayBench
 			ambientLight = new Color(.05f, .05f, .05f);
 			pointLights = new PointLight[]
 			{
-				new PointLight(new Vec3(.1f, .75f, -2), .01f, new Color(1, 1, 1) * 5, 3)
+				new PointLight(new Vec3(.1f, .75f, -2), .01f, new Color(1, 1, 1) * 10, 1),
+				//new PointLight(new Vec3(.1f, .5f, -2.5f), .01f, new Color(1, 0, 0) * 8, .7f),
+				//new PointLight(new Vec3(.2f, .75f, -2), .01f, new Color(0, 1, 0) * 8, 1),
+				//new PointLight(new Vec3(-.1f, .25f, -1f), .01f, new Color(0, 0, 1) * 8, .5f)
 			};
 
 			// start threads
@@ -575,13 +575,14 @@ namespace SimpleRayBench
 			{
 				var pointLight = pointLights[l];
 				Num r = rot * pointLight.rotSpeed;
-				pointLight.position = pointLight.rotPos + new Vec3(MATH.Cos(r), MATH.Sin(r), MATH.Sin(r)) * .1f;
+				pointLight.position = pointLight.rotPos + (new Vec3(MATH.Cos(r), MATH.Sin(r) * 4, MATH.Sin(r) * 3) * .1f);
+				pointLight.color = new Color(MATH.Abs(MATH.Cos(r)) * 10, MATH.Abs(MATH.Sin(r)) * 10, MATH.Abs(MATH.Cos(r * .33f) * 10));
 			}
 			
-			Num c = -rot * .5f;
+			Num c = -rot * .25f;
 			var center = new Vec3(0, 0, -2);
-			camera.position = center + new Vec3(MATH.Sin(c), 0, -MATH.Cos(c)) * 2;
-			camera.forward = -(center - camera.position).Normalize();
+			camera.position = center + new Vec3(MATH.Sin(c), MATH.Sin(c) * .1f, -MATH.Cos(c)) * 2;
+			camera.forward = (center - camera.position).Normalize();
 			camera.Update();
 		}
 
@@ -787,7 +788,7 @@ namespace SimpleRayBench
 			lightRay = new Ray(point, softVec.Normalize());
 			foreach (var o in objects)
 			{
-				if (o.Hit(lightRay, out var hitInfo))
+				if (o.Hit(lightRay, out var hitInfo) && (hitInfo.point - point).Length() <= lightDis)
 				{
 					return true;
 				}
