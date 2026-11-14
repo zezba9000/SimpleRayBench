@@ -35,6 +35,12 @@ public:
 	}
 
 	inline
+	static double Cos(double value)
+	{
+		return cos(value);
+	}
+
+	inline
 	static double Floor(double value)
 	{
 		return floor(value);
@@ -92,6 +98,12 @@ public:
 	static float Sin(float value)
 	{
 		return sin(value);
+	}
+
+	inline
+	static float Cos(float value)
+	{
+		return cos(value);
 	}
 
 	inline

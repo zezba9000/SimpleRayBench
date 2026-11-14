@@ -209,6 +209,11 @@ namespace SimpleRayBench
 			return (x*v.x) + (y*v.y) + (z*v.z);
 		}
 	}
+	
+	struct HitInfo
+	{
+		public Vec3 point, normal;
+	}
 
 	struct Ray
 	{
@@ -255,11 +260,6 @@ namespace SimpleRayBench
 
 			return true;
 		}
-	}
-
-	struct HitInfo
-	{
-		public Vec3 point, normal;
 	}
 
 	abstract class Obj
@@ -479,6 +479,7 @@ namespace SimpleRayBench
 				{
 					index = i,
 					randomIndex = i % threadCount,
+					exit = false,
 					waiting = true,
 					done = false,
 					x = 0,
@@ -768,27 +769,16 @@ namespace SimpleRayBench
 				}
 			}
 		}
-
-		static bool IsInShadow(in Vec3 point, in Vec3 randomVec, out Num lightDis, out Ray lightRay)
-		{
-			for (int l = 0; l != pointLights.Length; ++l)
-			{
-				if (IsInShadow(pointLights[l], point, randomVec, out lightDis, out lightRay)) return true;
-			}
-			
-			lightDis = 0;
-			lightRay = new Ray();
-			return false;
-		}
 		
 		static bool IsInShadow(PointLight pointLight, in Vec3 point, in Vec3 randomVec, out Num lightDis, out Ray lightRay)
 		{
 			var softVec = (pointLight.position + (randomVec * pointLight.radius)) - point;
 			lightDis = softVec.Length();
 			lightRay = new Ray(point, softVec.Normalize());
-			foreach (var o in objects)
+			for (int o = 0; o != objects.Length; ++o)
 			{
-				if (o.Hit(lightRay, out var hitInfo) && (hitInfo.point - point).Length() <= lightDis)
+				var obj = objects[o];
+				if (obj.Hit(lightRay, out var hitInfo) && (hitInfo.point - point).Length() <= lightDis)
 				{
 					return true;
 				}

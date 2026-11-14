@@ -12,7 +12,7 @@ using namespace SimpleRayBench;
 int main()
 {
 	const int size = 512;// image size
-	Benchmark::Init(size, size, 100);
+	Benchmark::Init(size, size, 200);
 
 	auto start = std::chrono::high_resolution_clock::now();
 	auto movie = Benchmark::Render(false);// run benchmark

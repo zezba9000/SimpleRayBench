@@ -3,7 +3,7 @@
 
 #define NUM32
 //#define NUM64
-//#define FOG_BASIC
+//#define DISABLE_FOG
 
 #if defined(NUM32)
 #define Num float
@@ -17,6 +17,9 @@ namespace SimpleRayBench
 {
 	class RandomUtil
 	{
+	private:
+		static float offsetX, offsetY;
+
 	public:
 		inline
 		static Num NextValue(Num u, Num v)
@@ -24,6 +27,11 @@ namespace SimpleRayBench
 			#define randoValueX 12.9898f
 			#define randoValueY 78.233f
 			#define randoValueZ 43758.543123f
+
+			u += offsetX;
+			v += offsetY;
+			offsetX += .5f;
+			offsetY += .75f;
 
 			Num result = (u * randoValueX) + (v * randoValueY);
 			result = MATH::Sin(result) * randoValueZ;
@@ -213,9 +221,38 @@ namespace SimpleRayBench
 		}
 
 		inline
+		Vec3 Cross(Vec3 vector) const
+		{
+			return Vec3(((y*vector.z) - (z*vector.y)), ((z*vector.x) - (x*vector.z)), ((x*vector.y) - (y*vector.x)));
+		}
+
+		inline
 		static Num FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 		{
 			return MATH::Pow(1 - MATH::Max((-rayDirection).Dot(normal), 0), 5);
+		}
+	};
+
+	struct Mat3
+	{
+	public:
+		Vec3 x, y, z;
+
+		Vec3 Transform(Vec3 v)
+		{
+			return (x*v.x) + (y*v.y) + (z*v.z);
+		}
+	};
+
+	struct HitInfo
+	{
+	public:
+		Vec3 point, normal;
+
+		HitInfo()
+		{
+			point = Vec3();
+			normal = Vec3();
 		}
 	};
 
@@ -235,17 +272,41 @@ namespace SimpleRayBench
 			this->origin = origin;
 			this->direction = direction;
 		}
-	};
 
-	struct HitInfo
-	{
-	public:
-		Vec3 point, normal;
-
-		HitInfo()
+		bool HitSphere(Vec3 sphereCenter, Num sphereRadius, HitInfo& info)
 		{
-			point = Vec3();
-			normal = Vec3();
+			// if ray pointing wrong direction ignore
+			if (direction.Dot(origin - sphereCenter) >= 0)
+			{
+				info = HitInfo();
+				return false;
+			}
+
+			// compute
+			Vec3 d = origin - sphereCenter;
+			Num a = direction.Dot(direction);
+			Num b = d.Dot(direction);
+			Num c = d.Dot() - sphereRadius * sphereRadius;
+
+			// if ray not pointing at object ignore
+			Num disc = b * b - a * c;
+			if (disc < 0)
+			{
+				info = HitInfo();
+				return false;
+			}
+
+			// compute
+			Num sqrtDisc = MATH::Sqrt(disc);
+			Num invA = 1 / a;
+			Num t1 = (-b - sqrtDisc) * invA;
+			//Num t2 = (-b + sqrtDisc) * invA;
+
+			info.point = origin + t1 * direction;
+			//info.point = origin + t2 * direction;
+			info.normal = (info.point - sphereCenter).Normalize();
+
+			return true;
 		}
 	};
 
@@ -264,7 +325,7 @@ namespace SimpleRayBench
 			this->metalic = metalic;
 		}
 
-		virtual bool Hit(const Ray& ray, HitInfo& info)
+		virtual bool Hit(Ray& ray, HitInfo& info)
 		{
 			return false;
 		}
@@ -283,40 +344,9 @@ namespace SimpleRayBench
 			this->radius = radius;
 		}
 
-		virtual bool Hit(const Ray& ray, HitInfo& info)
+		virtual bool Hit(Ray& ray, HitInfo& info)
 		{
-			// if ray pointing wrong direction ignore
-			if (ray.direction.Dot(ray.origin - center) >= 0)
-			{
-				info = HitInfo();
-				return false;
-			}
-
-			// compute
-			Vec3 d = ray.origin - center;
-			Num a = ray.direction.Dot(ray.direction);
-			Num b = d.Dot(ray.direction);
-			Num c = d.Dot() - radius * radius;
-
-			// if ray not pointing at object ignore
-			Num disc = b * b - a * c;
-			if (disc < 0)
-			{
-				info = HitInfo();
-				return false;
-			}
-
-			// compute
-			Num sqrtDisc = MATH::Sqrt(disc);
-			Num invA = 1 / a;
-			Num t1 = (-b - sqrtDisc) * invA;
-			//Num t2 = (-b + sqrtDisc) * invA;
-
-			info.point = ray.origin + t1 * ray.direction;
-			//info.point = ray.origin + t2 * ray.direction;
-			info.normal = (info.point - center).Normalize();
-
-			return true;
+			return ray.HitSphere(center, radius, info);
 		}
 	};
 
@@ -332,7 +362,7 @@ namespace SimpleRayBench
 			this->normal = normal.Normalize();
 		}
 
-		virtual bool Hit(const Ray& ray, HitInfo& info)
+		virtual bool Hit(Ray& ray, HitInfo& info)
 		{
 			// if ray pointing wrong direction ignore
 			if (ray.direction.Dot(normal) >= 0)
@@ -396,6 +426,7 @@ namespace SimpleRayBench
 	{
 	public:
 		Vec3 position, forward, up;
+		Mat3 matrix;
 
 		Camera(Vec3 position, Vec3 forward, Vec3 up)
 		{
@@ -403,27 +434,43 @@ namespace SimpleRayBench
 			this->forward = forward.Normalize();
 			this->up = up.Normalize();
 		}
+
+		void Update()
+		{
+			auto f = -forward;
+			auto r = up.Cross(f);
+			auto u = f.Cross(r);
+			matrix.x = r.Normalize();
+			matrix.y = u.Normalize();
+			matrix.z = f.Normalize();
+		}
 	};
 
-	class DirectionalLight
+	class PointLight
 	{
 	public:
-		Vec3 direction;
+		Vec3 position;
+		Num radius;
 		Color color;
-		Num softness;
 
-		DirectionalLight(Vec3 direction, Color color, Num softness)
+		Vec3 rotPos;
+		Num rotSpeed;
+
+		PointLight(Vec3 position, Num radius, Color color, Num rotSpeed)
 		{
-			this->direction = direction.Normalize();
+			this->position = position;
+			this->radius = radius;
 			this->color = color;
-			this->softness = softness;
+
+			rotPos = position;
+			this->rotSpeed = rotSpeed;
 		}
 	};
 
 	class RenderThreadData
 	{
 	public:
-		int index;
+		int index, randomIndex;
 		bool waiting, done, exit;
 		int x, y, xEnd, yEnd;
 		RawImage* image;
@@ -432,13 +479,11 @@ namespace SimpleRayBench
 	class Benchmark
 	{
 	public:
-		#define diffusePasses 1// use to set multi-pass diffuse blending
 		#define maxBounceCount 10// how many ray-bounces are allowed
 		#define roughnessMul 1// force tween material value
-		#define shadowSoftnessMul 1// force tween shadow value
 
-		#define maxVolumeFogSteps 500// how far can we test the shadow volume for
-		#define volumeFogStep .01f// how little the shadow volume testing step is
+		#define maxVolumeFogSteps (250 / 4)// how far can we test the shadow volume for
+		#define volumeFogStep (.01f * 4)// how little the shadow volume testing step is
 		#define fogDensity .4f// how dense the fog is
 		#define fogFalloff 1
 		static Color fogColor;
@@ -446,11 +491,11 @@ namespace SimpleRayBench
 		static int width, height, frames;
 		static RawMovie* movie;
 		static Camera* camera;
-		static int objectCount;
+		static int objectsLength;
 		static Obj** objects;
 		static Color ambientLight;
-		static int directionalLightCount;
-		static DirectionalLight** directionalLights;
+		static int pointLightsLength;
+		static PointLight** pointLights;
 
 		static int threadCount;
 		static RenderThreadData** threadDatas;
@@ -470,8 +515,8 @@ namespace SimpleRayBench
 			camera = new Camera(Vec3(0, 0, 0), Vec3(0, 0, -1), Vec3(0, 1, 0));
 
 			// init scene objects
-			objectCount = 5;
-			objects = new Obj*[objectCount];
+			objectsLength = 5;
+			objects = new Obj*[objectsLength];
 			objects[0] = new Plane(Vec3(0, -.4f, 0), Vec3(0, 1, 0), Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0);
 			objects[1] = new Sphere(Vec3(0, 0, -2), .33f, Color(1, 0, 0), 0 * roughnessMul, .25f, 0);
 			objects[2] = new Sphere(Vec3(-.25f, .5f, -1.5f), .25f, Color(0, 1, 0), 0 * roughnessMul, 1, 1);
@@ -480,9 +525,9 @@ namespace SimpleRayBench
 
 			// init scene lights
 			ambientLight = Color(.05f, .05f, .05f);
-			directionalLightCount = 1;
-			directionalLights = new DirectionalLight*[directionalLightCount];
-			directionalLights[0] = new DirectionalLight(Vec3(.25f, -1, -.25f), Color(1, 1, 1), .025f * shadowSoftnessMul);
+			pointLightsLength = 1;
+			pointLights = new PointLight*[pointLightsLength];
+			pointLights[0] = new PointLight(Vec3(.1f, .75f, -2), .01f, Color(1, 1, 1) * 10, 1);
 
 			// start threads
 			threadsAlive = true;
@@ -494,9 +539,11 @@ namespace SimpleRayBench
 			{
 				int sectionHeight = height / threadCount;
 				threadDatas[i] = new RenderThreadData();
+				threadDatas[i]->exit = false;
 				threadDatas[i]->waiting = true;
 				threadDatas[i]->done = false;
 				threadDatas[i]->index = i,
+				threadDatas[i]->randomIndex = i % threadCount,
 				threadDatas[i]->x = 0,
 				threadDatas[i]->y = i * sectionHeight,
 				threadDatas[i]->xEnd = width,
@@ -538,6 +585,7 @@ namespace SimpleRayBench
 						for (int x = 0; x != width; ++x)
 						{
 							ray.direction = Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
+							ray.direction = camera->matrix.Transform(ray.direction);
 
 							// generate shared random vector
 							Num randomVal = RandomUtil::NextValue(x / widthRange, y / heightRange);
@@ -586,8 +634,20 @@ namespace SimpleRayBench
 
 		static void UpdateMovieObjects(int frame)
 		{
-			float r = frame * .1f;
-			directionalLights[0]->direction = Vec3(cos(r), -1, sin(r)).Normalize();
+			Num rot = frame * .1f;
+			for (int l = 0; l != pointLightsLength; ++l)
+			{
+				auto pointLight = pointLights[l];
+				Num r = rot * pointLight->rotSpeed;
+				pointLight->position = pointLight->rotPos + (Vec3(MATH::Cos(r), MATH::Sin(r) * 4, MATH::Sin(r) * 3) * .1f);
+				pointLight->color = Color(MATH::Abs(MATH::Cos(r)) * 10, MATH::Abs(MATH::Sin(r)) * 10, MATH::Abs(MATH::Cos(r * .33f) * 10));
+			}
+
+			Num c = -rot * .25f;
+			auto center = Vec3(0, 0, -2);
+			camera->position = center + Vec3(MATH::Sin(c), MATH::Sin(c) * .1f, -MATH::Cos(c)) * 2;
+			camera->forward = (center - camera->position).Normalize();
+			camera->Update();
 		}
 
 		static void RenderThread(void* dataObj)
@@ -613,6 +673,7 @@ namespace SimpleRayBench
 					for (int x = data->x; x < data->xEnd; ++x)
 					{
 						ray.direction = Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
+						ray.direction = camera->matrix.Transform(ray.direction);
 
 						// generate shared random vector
 						Num randomVal = RandomUtil::NextValue(x / widthRange, y / heightRange);
@@ -634,13 +695,13 @@ namespace SimpleRayBench
 			}
 		}
 
-		static bool Trace(const Ray& ray, Color& light, int& maxBounce, Vec3& randomVec)
+		static bool Trace(Ray& ray, Color& light, int& maxBounce, const Vec3& randomVec)
 		{
 			// find closes object
 			Obj* closestObject = nullptr;
 			Num closestDis = Math::MaxValue();
 			auto closestInfo = HitInfo();
-			for (int o = 0; o != objectCount; ++o)
+			for (int o = 0; o != objectsLength; ++o)
 			{
 				auto obj = objects[o];
 				HitInfo info;
@@ -656,6 +717,30 @@ namespace SimpleRayBench
 				}
 			}
 
+			// hit point light orb
+			for (int l = 0; l != pointLightsLength; ++l)
+			{
+				auto pointLight = pointLights[l];
+				PointLight* closestLight = NULL;
+				HitInfo info;
+				if (ray.HitSphere(pointLight->position, pointLight->radius, info))
+				{
+					Num dis = (ray.origin - info.point).Length();
+					if (dis < closestDis)
+					{
+						closestDis = dis;
+						closestLight = pointLight;
+						closestInfo = info;
+					}
+				}
+
+				if (closestLight != NULL)
+				{
+					light = closestLight->color;
+					return true;
+				}
+			}
+
 			// process lighting
 			if (closestObject != nullptr)
 			{
@@ -667,75 +752,66 @@ namespace SimpleRayBench
 				auto reflectedClosestInfo = closestInfo;
 				auto reflectedRay = ray;
 
-				// diffuse light
-				auto diffuseLight = Color();
+				// diffuse surface normal
+				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * closestObject->roughness) / (closestDis + 1));
+				reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
+				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
+
+				// gather surface light
+				GatherLight(closestObject, reflectedClosestInfo, light, randomVec);
+
+				// trace from this reflected path
+				maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 				auto reflectedLight = Color();
-				for (int i = 0; i != diffusePasses; ++i)
-				{
-					// diffuse surface normal
-					reflectedClosestInfo.normal = closestInfo.normal + (randomVec * closestObject->roughness);
-					reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
-					reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
-
-					// gather surface light
-					GatherLight(closestObject, reflectedClosestInfo, diffuseLight, randomVec);
-
-					// trace from this reflected path
-					maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
-					Trace(reflectedRay, reflectedLight, maxBounce, randomVec);
-				}
-
-				// material (diffuse)
-				light = diffuseLight / diffusePasses;
+				Trace(reflectedRay, reflectedLight, maxBounce, randomVec);
 
 				// material (reflection)
-				reflectedLight = reflectedLight / diffusePasses;
 				Num fresnel = 1 - Vec3::FresnelSchlickZero(ray.direction, closestInfo.normal);
 				light += Color::Lerp(reflectedLight, reflectedLight * closestObject->color, closestObject->metalic * fresnel) * closestObject->reflectiveness;
 
-				// fog
-				#if defined(FOG_BASIC)
-				// basic fog just uses fog color directly
-				light = Color::LerpClamp(light, fogColor, MATH::Pow(closestDis, fogFalloff) * fogDensity);
-				#else
 				// volume fog tracing taking into account shadows
+				#if !DISABLE_FOG
 				auto fogPos = ray.origin;
 				auto fogStep = ray.direction * volumeFogStep;
-				Num fogDis = 0;
-				Num fogLitDis = 0;
-				Num closestFogDis = closestDis;
-				for (int i = 0; i != maxVolumeFogSteps; ++i)
+				int maxVolumeFogStepsClamped = (int)MATH::Min(closestDis / volumeFogStep, maxVolumeFogSteps);
+				for (int l = 0; l != pointLightsLength; ++l)
 				{
-					fogPos += fogStep;
-					fogDis += volumeFogStep;
-					if (!IsInShadow(fogPos, randomVec)) fogLitDis += volumeFogStep;
-					if (i == maxVolumeFogSteps - 1) closestFogDis = (maxVolumeFogSteps * volumeFogStep);
-					if (fogDis > closestDis) break;
+					Num fogBrightness = 0;
+					auto pointLight = pointLights[l];
+					for (int i = 0; i != maxVolumeFogStepsClamped; ++i)
+					{
+						fogPos += fogStep;
+						Num lightDis;
+						Ray lightRay;
+						if (!IsInShadow(pointLight, fogPos, randomVec, lightDis, lightRay)) fogBrightness += 1 / MATH::Pow(lightDis + 1, 4);
+					}
+					light += pointLight->color * fogBrightness * volumeFogStep * .1f;
 				}
-				Color fogColorValue = fogColor * (fogLitDis / closestFogDis);
-				light = Color::LerpClamp(light, fogColorValue, MATH::Pow(closestDis, fogFalloff) * fogDensity);
 				#endif
 				
 				return true;
 			}
-			#if defined(FOG_BASIC)
-			light += fogColor;
-			#else
 			else
 			{
 				// volume fog tracing taking into account shadows (optimized for when nothing is hit)
+				#if !DISABLE_FOG
 				auto fogPos = ray.origin;
 				auto fogStep = ray.direction * volumeFogStep;
-				Num fogLitDis = 0;
-				for (int i = 0; i != maxVolumeFogSteps; ++i)
+				for (int l = 0; l != pointLightsLength; ++l)
 				{
-					fogPos += fogStep;
-					if (!IsInShadow(fogPos, randomVec)) fogLitDis += volumeFogStep;
+					Num fogBrightness = 0;
+					auto pointLight = pointLights[l];
+					for (int i = 0; i != maxVolumeFogSteps; ++i)
+					{
+						fogPos += fogStep;
+						Num lightDis;
+						Ray lightRay;
+						if (!IsInShadow(pointLight, fogPos, randomVec, lightDis, lightRay)) fogBrightness += 1 / MATH::Pow(lightDis + 1, 4);
+					}
+					light += pointLight->color * fogBrightness * volumeFogStep * .1f;
 				}
-				Color fogColorValue = fogColor * (fogLitDis / (maxVolumeFogSteps * volumeFogStep));
-				light = Color::LerpClamp(light, fogColorValue, MATH::Pow(closestDis, fogFalloff) * fogDensity);
+				#endif
 			}
-			#endif
 
 			// hit nothing
 			return false;
@@ -748,54 +824,35 @@ namespace SimpleRayBench
 			// ambient
 			light += objColor * ambientLight;
 
-			// directional
-			bool inShadow = false;
-			for (int i = 0; i != directionalLightCount; ++i)
+			// point
+			for (int l = 0; l != pointLightsLength; ++l)
 			{
-				auto l = directionalLights[i];
-
-				// in object shadow
-				for (int i2 = 0; i2 != objectCount; ++i2)
-				{
-					auto o = objects[i2];
-
-					if (o == obj) continue;
-					auto softDir = -l->direction + (randomVec * l->softness);
-					auto shadowRay = Ray(info.point, softDir.Normalize());
-					HitInfo shadowInfo;
-					if (o->Hit(shadowRay, shadowInfo))
-					{
-						inShadow = true;
-						break;
-					}
-				}
+				auto pointLight = pointLights[l];
 
 				// diffuse
-				if (!inShadow)
+				Num lightDis;
+				Ray lightRay;
+				if (!IsInShadow(pointLights[l], info.point, randomVec, lightDis, lightRay))
 				{
-					Num d = MATH::Max(info.normal.Dot(-l->direction), 0);
-					light += objColor * l->color * d;
+					Num d = MATH::Max(info.normal.Dot(lightRay.direction), 0);
+					d /= MATH::Pow(lightDis + 1, 4);
+					light += objColor * pointLight->color * d;
 				}
 			}
 		}
 
-		static bool IsInShadow(const Vec3& point, const Vec3& randomVec)
+		static bool IsInShadow(PointLight* pointLight, const Vec3& point, const Vec3& randomVec, Num& lightDis, Ray& lightRay)
 		{
-			for (int i = 0; i != directionalLightCount; ++i)
+			auto softVec = (pointLight->position + (randomVec * pointLight->radius)) - point;
+			lightDis = softVec.Length();
+			lightRay = Ray(point, softVec.Normalize());
+			for (int o = 0; o != objectsLength; ++o)
 			{
-				auto l = directionalLights[i];
-
-				for (int i2 = 0; i2 != objectCount; ++i2)
+				auto obj = objects[o];
+				HitInfo hitInfo;
+				if (obj->Hit(lightRay, hitInfo) && (hitInfo.point - point).Length() <= lightDis)
 				{
-					auto o = objects[i2];
-
-					auto softDir = -l->direction + (randomVec * l->softness);
-					auto shadowRay = Ray(point, softDir.Normalize());
-					HitInfo shadowInfo;
-					if (o->Hit(shadowRay, shadowInfo))
-					{
-						return true;
-					}
+					return true;
 				}
 			}
 			return false;
@@ -804,16 +861,19 @@ namespace SimpleRayBench
 
 	Color Benchmark::fogColor = Color(.25f, .25f, .25f);
 
+	float RandomUtil::offsetX;
+	float RandomUtil::offsetY;
+
 	int Benchmark::width;
 	int Benchmark::height;
 	int Benchmark::frames;
 	RawMovie* Benchmark::movie;
 	Camera* Benchmark::camera;
-	int Benchmark::objectCount;
+	int Benchmark::objectsLength;
 	Obj** Benchmark::objects;
 	Color Benchmark::ambientLight;
-	int Benchmark::directionalLightCount;
-	DirectionalLight** Benchmark::directionalLights;
+	int Benchmark::pointLightsLength;
+	PointLight** Benchmark::pointLights;
 
 	int Benchmark::threadCount;
 	RenderThreadData** Benchmark::threadDatas;
