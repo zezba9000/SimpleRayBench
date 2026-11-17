@@ -19,7 +19,7 @@ namespace SimpleRayBench
 {
 	static class RandomUtil
 	{
-		private static float offsetX, offsetY;
+		private static Num offsetX, offsetY;
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static Num NextValue(Num u, Num v)
@@ -81,13 +81,13 @@ namespace SimpleRayBench
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color Lerp(Color p1, Color p2, Num t)
+		public static Color Lerp(in Color p1, in Color p2, Num t)
 		{
 			return p1 + ((p2 - p1) * t);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color LerpClamp(Color p1, Color p2, Num t)
+		public static Color LerpClamp(in Color p1, in Color p2, Num t)
 		{
 			return p1 + ((p2 - p1) * Math.Clamp(t, 0, 1));
 		}
@@ -183,19 +183,19 @@ namespace SimpleRayBench
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Vec3 Reflect(Vec3 planeNormal)
+		public Vec3 Reflect(in Vec3 planeNormal)
 		{
 			return this - (planeNormal * this.Dot(planeNormal) * 2);
 		}
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Vec3 Cross(Vec3 vector)
+		public Vec3 Cross(in Vec3 vector)
 		{
 			return new Vec3(((y*vector.z) - (z*vector.y)), ((z*vector.x) - (x*vector.z)), ((x*vector.y) - (y*vector.x)));
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Num FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
+		public static Num FresnelSchlickZero(in Vec3 rayDirection, in Vec3 normal)
 		{
 			return MATH.Pow(1 - MATH.Max((-rayDirection).Dot(normal), 0), 5);
 		}
@@ -226,7 +226,7 @@ namespace SimpleRayBench
 			this.direction = direction;
 		}
 		
-		public bool HitSphere(Vec3 sphereCenter, Num sphereRadius, out HitInfo info)
+		public bool HitSphere(in Vec3 sphereCenter, Num sphereRadius, out HitInfo info)
 		{
 			// if ray pointing wrong direction ignore
 			if (direction.Dot(origin - sphereCenter) >= 0)
@@ -307,7 +307,7 @@ namespace SimpleRayBench
 	sealed class Sphere : Obj
 	{
 		public Vec3 center;
-		public float radius;
+		public Num radius;
 
 		public Sphere(Vec3 center, float radius, Material material)
 		{
