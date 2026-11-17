@@ -13,9 +13,10 @@ namespace SimpleRayBench
 			//for (int y = 0; y != image.height; ++y)// normal Y
 			for (int y = image.height - 1; y != -1; --y)// invert Y
 			{
+				int rowOffset = y * image.width;
 				for (int x = 0; x != image.width; ++x)
 				{
-					var color = image.colors[x, y] * 255;
+					var color = image.colors[x + rowOffset] * 255;
 					data[i] = (byte)Math.Clamp(color.r, 0, 255);
 					data[i + 1] = (byte)Math.Clamp(color.g, 0, 255);
 					data[i + 2] = (byte)Math.Clamp(color.b, 0, 255);

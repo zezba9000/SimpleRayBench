@@ -9,16 +9,120 @@ using System.Threading;
 
 #if NUM32
 using Num = System.Single;
-using MATH = System.MathF;
 #elif NUM64
 using Num = System.Double;
-using MATH = System.Math;
 #endif
 
 namespace SimpleRayBench
 {
+	static class MATH
+	{
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Clamp(Num value, Num min, Num max)
+		{
+			if (value < min) return min;
+			if (value > max) return max;
+			return value;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Sqrt(Num value)
+		{
+			#if NUM32
+			return MathF.Sqrt(value);
+			#else
+			return Math.Sqrt(value);
+			#endif
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Sin(Num value)
+		{
+			#if NUM32
+			return MathF.Sin(value);
+			#else
+			return Math.Sin(value);
+			#endif
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Cos(Num value)
+		{
+			#if NUM32
+			return MathF.Cos(value);
+			#else
+			return Math.Cos(value);
+			#endif
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Floor(Num value)
+		{
+			#if NUM32
+			return MathF.Floor(value);
+			#else
+			return Math.Floor(value);
+			#endif
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Pow(Num value, Num x)
+		{
+			#if NUM32
+			return MathF.Pow(value, x);
+			#else
+			return Math.Pow(value, x);
+			#endif
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Pow4(Num value)
+		{
+			Num v2 = value * value;
+			return v2 * v2;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Pow5(Num value)
+		{
+			Num v2 = value * value;
+			return v2 * v2 * value;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Pow(Num value, int x)
+		{
+			if (x == 4) return Pow4(value);
+			if (x == 5) return Pow5(value);
+			return Pow(value, (Num)x);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Max(Num value, Num x)
+		{
+			return (value > x) ? value : x;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Min(Num value, Num x)
+		{
+			return (value < x) ? value : x;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num Abs(Num value)
+		{
+			#if NUM32
+			return MathF.Abs(value);
+			#else
+			return Math.Abs(value);
+			#endif
+		}
+	}
+
 	static class RandomUtil
 	{
+		[ThreadStatic]
 		private static Num offsetX, offsetY;
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -37,12 +141,30 @@ namespace SimpleRayBench
 			result = MATH.Sin(result) * randoValueZ;
 			return result - MATH.Floor(result);
 		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Num NextValue(Num u, Num v, ref Num ox, ref Num oy)
+		{
+			const Num randoValueX = 12.9898f;
+			const Num randoValueY = 78.233f;
+			const Num randoValueZ = 43758.543123f;
+
+			u += ox;
+			v += oy;
+			ox += .5f;
+			oy += .75f;
+			
+			Num result = (u * randoValueX) + (v * randoValueY);
+			result = MATH.Sin(result) * randoValueZ;
+			return result - MATH.Floor(result);
+		}
 	}
 
 	public struct Color
 	{
 		public Num r, g, b;
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public Color(Num r, Num g, Num b)
 		{
 			this.r = r;
@@ -51,45 +173,45 @@ namespace SimpleRayBench
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color operator+(in Color p1, in Color p2)
+		public static Color operator+(Color p1, Color p2)
 		{
 			return new Color(p1.r + p2.r, p1.g + p2.g, p1.b + p2.b);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color operator-(in Color p1, in Color p2)
+		public static Color operator-(Color p1, Color p2)
 		{
 			return new Color(p1.r - p2.r, p1.g - p2.g, p1.b - p2.b);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color operator*(in Color p1, in Color p2)
+		public static Color operator*(Color p1, Color p2)
 		{
 			return new Color(p1.r * p2.r, p1.g * p2.g, p1.b * p2.b);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color operator*(in Color p1, Num p2)
+		public static Color operator*(Color p1, Num p2)
 		{
 			return new Color(p1.r * p2, p1.g * p2, p1.b * p2);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color operator/(in Color p1, Num p2)
+		public static Color operator/(Color p1, Num p2)
 		{
 			return new Color(p1.r / p2, p1.g / p2, p1.b / p2);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color Lerp(in Color p1, in Color p2, Num t)
+		public static Color Lerp(Color p1, Color p2, Num t)
 		{
 			return p1 + ((p2 - p1) * t);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Color LerpClamp(in Color p1, in Color p2, Num t)
+		public static Color LerpClamp(Color p1, Color p2, Num t)
 		{
-			return p1 + ((p2 - p1) * Math.Clamp(t, 0, 1));
+			return p1 + ((p2 - p1) * MATH.Clamp(t, 0, 1));
 		}
 	}
 
@@ -97,6 +219,7 @@ namespace SimpleRayBench
 	{
 		public Num x, y, z;
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public Vec3(Num x, Num y, Num z)
 		{
 			this.x = x;
@@ -105,99 +228,99 @@ namespace SimpleRayBench
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator +(in Vec3 p1, in Vec3 p2)
+		public static Vec3 operator +(Vec3 p1, Vec3 p2)
 		{
 			return new Vec3(p1.x + p2.x, p1.y + p2.y, p1.z + p2.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator -(in Vec3 p1, in Vec3 p2)
+		public static Vec3 operator -(Vec3 p1, Vec3 p2)
 		{
 			return new Vec3(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator-(in Vec3 p1, Num p2)
+		public static Vec3 operator-(Vec3 p1, Num p2)
 		{
 			return new Vec3(p1.x - p2, p1.y - p2, p1.z - p2);
 		}
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator-(in Vec3 p1)
+		public static Vec3 operator-(Vec3 p1)
 		{
 			return new Vec3(-p1.x, -p1.y, -p1.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator*(in Vec3 p1, in Vec3 p2)
+		public static Vec3 operator*(Vec3 p1, Vec3 p2)
 		{
 			return new Vec3(p1.x * p2.x, p1.y * p2.y, p1.z * p2.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator*(in Vec3 p1, Num p2)
+		public static Vec3 operator*(Vec3 p1, Num p2)
 		{
 			return new Vec3(p1.x * p2, p1.y * p2, p1.z * p2);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator*(Num p1, in Vec3 p2)
+		public static Vec3 operator*(Num p1, Vec3 p2)
 		{
 			return new Vec3(p1 * p2.x, p1 * p2.y, p1 * p2.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator/(in Vec3 p1, in Vec3 p2)
+		public static Vec3 operator/(Vec3 p1, Vec3 p2)
 		{
 			return new Vec3(p1.x / p2.x, p1.y / p2.y, p1.z / p2.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Vec3 operator/(in Vec3 p1, Num p2)
+		public static Vec3 operator/(Vec3 p1, Num p2)
 		{
 			return new Vec3(p1.x / p2, p1.y / p2, p1.z / p2);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Num Dot()
+		public readonly Num Dot()
 		{
 			return (x*x) + (y*y) + (z*z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Num Dot(in Vec3 vec)
+		public readonly Num Dot(Vec3 vec)
 		{
 			return (x*vec.x) + (y*vec.y) + (z*vec.z);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Num Length()
+		public readonly Num Length()
 		{
 			return MATH.Sqrt((x*x) + (y*y) + (z*z));
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Vec3 Normalize()
+		public readonly Vec3 Normalize()
 		{
 			return this / MATH.Sqrt((x*x) + (y*y) + (z*z));
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Vec3 Reflect(in Vec3 planeNormal)
+		public readonly Vec3 Reflect(Vec3 planeNormal)
 		{
 			return this - (planeNormal * this.Dot(planeNormal) * 2);
 		}
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public Vec3 Cross(in Vec3 vector)
+		public readonly Vec3 Cross(Vec3 vector)
 		{
 			return new Vec3(((y*vector.z) - (z*vector.y)), ((z*vector.x) - (x*vector.z)), ((x*vector.y) - (y*vector.x)));
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static Num FresnelSchlickZero(in Vec3 rayDirection, in Vec3 normal)
+		public static Num FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 		{
-			return MATH.Pow(1 - MATH.Max((-rayDirection).Dot(normal), 0), 5);
+			return MATH.Pow5(1 - MATH.Max((-rayDirection).Dot(normal), 0));
 		}
 	}
 	
@@ -205,47 +328,48 @@ namespace SimpleRayBench
 	{
 		public Vec3 x, y, z;
 		
-		public Vec3 Transform(Vec3 v)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public readonly Vec3 Transform(Vec3 v)
 		{
 			return (x*v.x) + (y*v.y) + (z*v.z);
 		}
 	}
 	
-	struct HitInfo
-	{
-		public Vec3 point, normal;
-	}
-
 	struct Ray
 	{
 		public Vec3 origin, direction;
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public Ray(Vec3 origin, Vec3 direction)
 		{
 			this.origin = origin;
 			this.direction = direction;
 		}
 		
-		public bool HitSphere(in Vec3 sphereCenter, Num sphereRadius, out HitInfo info)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static bool HitSphere(Vec3 rayOrigin, Vec3 rayDirection, Vec3 sphereCenter, Num sphereRadius, out Vec3 hitPoint, out Vec3 hitNormal)
 		{
+			Vec3 d = rayOrigin - sphereCenter;
+			Num b = d.Dot(rayDirection);
+
 			// if ray pointing wrong direction ignore
-			if (direction.Dot(origin - sphereCenter) >= 0)
+			if (b >= 0)
 			{
-				info = new HitInfo();
+				hitPoint = default;
+				hitNormal = default;
 				return false;
 			}
 
 			// compute
-			Vec3 d = origin - sphereCenter;
-			Num a = direction.Dot(direction);
-			Num b = d.Dot(direction);
+			Num a = rayDirection.Dot(rayDirection);
 			Num c = d.Dot() - sphereRadius * sphereRadius;
 
 			// if ray not pointing at object ignore
 			Num disc = b * b - a * c;
 			if (disc < 0)
 			{
-				info = new HitInfo();
+				hitPoint = default;
+				hitNormal = default;
 				return false;
 			}
 
@@ -254,8 +378,8 @@ namespace SimpleRayBench
 			Num invA = 1 / a;
 			Num t1 = (-b - sqrtDisc) * invA;
 			
-			info.point = origin + t1 * direction;
-			info.normal = (info.point - sphereCenter).Normalize();
+			hitPoint = rayOrigin + t1 * rayDirection;
+			hitNormal = (hitPoint - sphereCenter).Normalize();
 
 			return true;
 		}
@@ -267,6 +391,7 @@ namespace SimpleRayBench
 		public Num roughness;
 		public Num reflectiveness, metalic;
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public Material(Color color, Num roughness, Num reflectiveness, Num metalic)
 		{
 			this.color = color;
@@ -282,106 +407,91 @@ namespace SimpleRayBench
 		Sphere
 	}
 
-	abstract class Obj
+	struct Obj
 	{
 		public ObjType type;
 		public Material material;
+		public Vec3 center;
+		public Vec3 normal;
+		public Num radius;
 
-		#if VIRTUAL_ON
-		public abstract bool Hit(in Ray ray, out HitInfo info);
-		#else
-		public bool Hit(in Ray ray, out HitInfo info)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Obj CreatePlane(Vec3 center, Vec3 normal, Material material)
+		{
+			return new Obj
+			{
+				type = ObjType.Plane,
+				center = center,
+				normal = normal.Normalize(),
+				material = material
+			};
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static Obj CreateSphere(Vec3 center, Num radius, Material material)
+		{
+			return new Obj
+			{
+				type = ObjType.Sphere,
+				center = center,
+				radius = radius,
+				material = material
+			};
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public readonly bool Hit(Vec3 rayOrigin, Vec3 rayDirection, out Vec3 hitPoint, out Vec3 hitNormal)
 		{
 			switch (type)
 			{
-				case ObjType.Sphere: return ((Sphere)this).HitSphere(ray, out info);
-				case ObjType.Plane: return ((Plane)this).HitPlane(ray, out info);
+				case ObjType.Sphere: return Ray.HitSphere(rayOrigin, rayDirection, center, radius, out hitPoint, out hitNormal);
+				case ObjType.Plane: return HitPlane(rayOrigin, rayDirection, out hitPoint, out hitNormal);
 			}
 
-			info = new HitInfo();
+			hitPoint = default;
+			hitNormal = default;
 			return false;
 		}
-		#endif
-	}
 
-	sealed class Sphere : Obj
-	{
-		public Vec3 center;
-		public Num radius;
-
-		public Sphere(Vec3 center, float radius, Material material)
-		{
-			type = ObjType.Sphere;
-			this.center = center;
-			this.radius = radius;
-			this.material = material;
-		}
-
-		#if VIRTUAL_ON
-		public override bool Hit(in Ray ray, out HitInfo info)
-		#else
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public bool HitSphere(in Ray ray, out HitInfo info)
-		#endif
+		public readonly bool HitPlane(Vec3 rayOrigin, Vec3 rayDirection, out Vec3 hitPoint, out Vec3 hitNormal)
 		{
-			return ray.HitSphere(center, radius, out info);
-		}
-	}
-
-	sealed class Plane : Obj
-	{
-		public Vec3 center, normal;
-
-		public Plane(Vec3 center, Vec3 normal, Material material)
-		{
-			type = ObjType.Plane;
-			this.center = center;
-			this.normal = normal.Normalize();
-			this.material = material;
-		}
-
-		#if VIRTUAL_ON
-		public override bool Hit(in Ray ray, out HitInfo info)
-		#else
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public bool HitPlane(in Ray ray, out HitInfo info)
-		#endif
-		{
+			Num denom = normal.Dot(rayDirection);
 			// if ray pointing wrong direction ignore
-			if (ray.direction.Dot(normal) >= 0)
+			if (denom >= 0)
 			{
-				info = new HitInfo();
+				hitPoint = default;
+				hitNormal = default;
 				return false;
 			}
 
-			Num denom = normal.Dot(ray.direction);
 			if (MATH.Abs(denom) > 0.0001f)
 			{
-				Num t = (center - ray.origin).Dot(normal) / denom;
+				Num t = (center - rayOrigin).Dot(normal) / denom;
 				if (t >= 0)
 				{
-					info.point = ray.origin + (ray.direction * t);
-					info.normal = normal;
+					hitPoint = rayOrigin + (rayDirection * t);
+					hitNormal = normal;
 					return true;
 				}
 			}
 
-			info = new HitInfo();
+			hitPoint = default;
+			hitNormal = default;
 			return false;
 		}
-		
 	}
 
 	public class RawImage
 	{
 		public int width, height;
-		public Color[,] colors;
+		public Color[] colors;
 
 		public RawImage(int width, int height)
 		{
 			this.width = width;
 			this.height = height;
-			colors = new Color[width, height];
+			colors = new Color[width * height];
 		}
 	}
 
@@ -426,7 +536,7 @@ namespace SimpleRayBench
 		}
 	}
 	
-	class PointLight
+	struct PointLight
 	{
 		public Vec3 position;
 		public Num radius;
@@ -449,9 +559,10 @@ namespace SimpleRayBench
 	class RenderThreadData
 	{
 		public int index, randomIndex;
-		public bool waiting, done, exit;
+		public volatile bool waiting, done, exit;
 		public int x, y, xEnd, yEnd;
 		public RawImage image;
+		public Num offsetX, offsetY;
 	}
 
 	public static class Benchmark
@@ -482,16 +593,16 @@ namespace SimpleRayBench
 			movie = new RawMovie(width, height, frames);
 
 			// init camera
-			camera = new Camera(new Vec3(0, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 1, 0));
+			camera = new Camera(new Vec3(0, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 1, 0));
 
 			// init scene objects
 			objects = new Obj[]
 			{
-				new Plane(new Vec3(0, -.4f, 0), new Vec3(0, 1, 0), new Material(new Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0)),
-				new Sphere(new Vec3(0, 0, -2), .33f, new Material(new Color(1, 0, 0), 0 * roughnessMul, .25f, 0)),
-				new Sphere(new Vec3(-.25f, .5f, -1.5f), .25f, new Material(new Color(0, 1, 0), 0 * roughnessMul, 1, 1)),
-				new Sphere(new Vec3(1, -.75f, -2), 1, new Material(new Color(0, 0, 1), 0 * roughnessMul, 1, 1)),
-				new Sphere(new Vec3(.2f, .25f, -1.5f), .1f, new Material(new Color(1, 1, 0), 0 * roughnessMul, 1, .5f))
+				Obj.CreatePlane(new Vec3(0, -.4f, 0), new Vec3(0, 1, 0), new Material(new Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0)),
+				Obj.CreateSphere(new Vec3(0, 0, -2), .33f, new Material(new Color(1, 0, 0), 0 * roughnessMul, .25f, 0)),
+				Obj.CreateSphere(new Vec3(-.25f, .5f, -1.5f), .25f, new Material(new Color(0, 1, 0), 0 * roughnessMul, 1, 1)),
+				Obj.CreateSphere(new Vec3(1, -.75f, -2), 1, new Material(new Color(0, 0, 1), 0 * roughnessMul, 1, 1)),
+				Obj.CreateSphere(new Vec3(.2f, .25f, -1.5f), .1f, new Material(new Color(1, 1, 0), 0 * roughnessMul, 1, .5f))
 			};
 
 			// init scene lights
@@ -569,10 +680,10 @@ namespace SimpleRayBench
 							// trace
 							int maxBounce = maxBounceCount;
 							var light = new Color();
-							Trace(ray, ref light, ref maxBounce, randomVec);
+							Trace(in ray, ref light, ref maxBounce, randomVec);
 
 							// write result
-							colors[x, y] = light;
+							colors[x + (y * width)] = light;
 						}
 					}
 				}
@@ -595,9 +706,10 @@ namespace SimpleRayBench
 					}
 
 					// wait for all threads to finish
+					var spin = new SpinWait();
 					foreach (var data in threadDatas)
 					{
-						while (!data.done) Thread.Sleep(1);
+						while (!data.done) spin.SpinOnce(-1);
 					}
 				}
 			}
@@ -610,7 +722,7 @@ namespace SimpleRayBench
 			Num rot = frame * .1f;
 			for (int l = 0; l != pointLights.Length; ++l)
 			{
-				var pointLight = pointLights[l];
+				ref var pointLight = ref pointLights[l];
 				Num r = rot * pointLight.rotSpeed;
 				pointLight.position = pointLight.rotPos + (new Vec3(MATH.Cos(r), MATH.Sin(r) * 4, MATH.Sin(r) * 3) * .1f);
 				pointLight.color = new Color(MATH.Abs(MATH.Cos(r)) * 10, MATH.Abs(MATH.Sin(r)) * 10, MATH.Abs(MATH.Cos(r * .33f) * 10));
@@ -623,44 +735,60 @@ namespace SimpleRayBench
 			camera.Update();
 		}
 
+		[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 		private static void RenderThread(object dataObj)
 		{
 			var data = (RenderThreadData)dataObj;
+			var spin = new SpinWait();
 
 			while (!data.exit)
 			{
 				// wait for main thread to trigger
-				while (data.waiting) Thread.Sleep(1);
+				while (data.waiting) spin.SpinOnce(-1);
 				if (data.done) return;
 
 				// setup ray
-				Ray ray;
-				ray.origin = camera.position;
+				Vec3 rayOrigin = camera.position;
+				Mat3 camMatrix = camera.matrix;
 
 				// render image section
 				var colors = data.image.colors;
-				Num widthRange = width - 1;
+				var objs = objects;
+				var lights = pointLights;
+				Color ambient = ambientLight;
+				int w = width;
+				Num widthRange = w - 1;
 				Num heightRange = height - 1;
-				for (int y = data.y; y < data.yEnd; ++y)
+				int xStart = data.x;
+				int xEnd = data.xEnd;
+				int yEnd = data.yEnd;
+				Num ox = data.offsetX;
+				Num oy = data.offsetY;
+				for (int y = data.y; y < yEnd; ++y)
 				{
-					for (int x = data.x; x < data.xEnd; ++x)
+					int rowOffset = y * w;
+					Num yNorm = y / heightRange;
+					for (int x = xStart; x < xEnd; ++x)
 					{
-						ray.direction = new Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
-						ray.direction = camera.matrix.Transform(ray.direction);
+						Num xNorm = x / widthRange;
+						Vec3 rayDirection = new Vec3(xNorm - .5f, yNorm - .5f, -1).Normalize();
+						rayDirection = camMatrix.Transform(rayDirection);
 
 						// generate shared random vector
-						Num randomVal = RandomUtil.NextValue(x / widthRange, y / heightRange);
+						Num randomVal = RandomUtil.NextValue(xNorm, yNorm, ref ox, ref oy);
 						var randomVec = new Vec3(randomVal, randomVal, randomVal) - .5f;
 
 						// trace
 						int maxBounce = maxBounceCount;
 						var light = new Color();
-						Trace(ray, ref light, ref maxBounce, randomVec);
+						Trace(rayOrigin, rayDirection, ref light, ref maxBounce, randomVec, objs, lights, ambient);
 
 						// write result
-						colors[x, y] = light;
+						colors[x + rowOffset] = light;
 					}
 				}
+				data.offsetX = ox;
+				data.offsetY = oy;
 
 				// tell main thread we're done
 				data.done = true;
@@ -668,92 +796,100 @@ namespace SimpleRayBench
 			}
 		}
 
-		static bool Trace(in Ray ray, ref Color light, ref int maxBounce, in Vec3 randomVec)
+		[MethodImpl(MethodImplOptions.AggressiveOptimization)]
+		static bool Trace(in Ray ray, ref Color light, ref int maxBounce, Vec3 randomVec)
+		{
+			return Trace(ray.origin, ray.direction, ref light, ref maxBounce, randomVec, objects, pointLights, ambientLight);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveOptimization)]
+		static bool Trace(Vec3 rayOrigin, Vec3 rayDirection, ref Color light, ref int maxBounce, Vec3 randomVec, Obj[] objs, PointLight[] lights, Color ambient)
 		{
 			// find closes object
-			Obj closestObject = null;
+			int closestObjectIdx = -1;
 			Num closestDis = Num.MaxValue;
-			var closestInfo = new HitInfo();
-			for (int o = 0; o != objects.Length; ++o)
+			Vec3 closestPoint = default;
+			Vec3 closestNormal = default;
+			for (int o = 0; o < objs.Length; ++o)
 			{
-				var obj = objects[o];
-				if (obj.Hit(ray, out var info))
+				if (objs[o].Hit(rayOrigin, rayDirection, out var infoPoint, out var infoNormal))
 				{
-					Num dis = (ray.origin - info.point).Length();
+					Num dis = (rayOrigin - infoPoint).Length();
 					if (dis < closestDis)
 					{
 						closestDis = dis;
-						closestObject = obj;
-						closestInfo = info;
+						closestObjectIdx = o;
+						closestPoint = infoPoint;
+						closestNormal = infoNormal;
 					}
 				}
 			}
 			
 			// hit point light orb
-			for (int l = 0; l != pointLights.Length; ++l)
+			for (int l = 0; l < lights.Length; ++l)
 			{
-				var pointLight = pointLights[l];
-				PointLight closestLight = null;
-				if (ray.HitSphere(pointLight.position, pointLight.radius, out var info))
+				ref readonly var pointLight = ref lights[l];
+				bool hitLight = false;
+				if (Ray.HitSphere(rayOrigin, rayDirection, pointLight.position, pointLight.radius, out var infoPoint, out var infoNormal))
 				{
-					Num dis = (ray.origin - info.point).Length();
+					Num dis = (rayOrigin - infoPoint).Length();
 					if (dis < closestDis)
 					{
 						closestDis = dis;
-						closestLight = pointLight;
-						closestInfo = info;
+						hitLight = true;
+						closestPoint = infoPoint;
+						closestNormal = infoNormal;
 					}
 				}
 				
-				if (closestLight != null)
+				if (hitLight)
 				{
-					light = closestLight.color;
+					light = pointLight.color;
 					return true;
 				}
 			}
 
 			// process lighting
-			if (closestObject != null)
+			if (closestObjectIdx >= 0)
 			{
 				if (maxBounce <= 0) return false;
 				maxBounce--;
 				int maxBounceReset = maxBounce;
 
 				// buffer diffuse pass state objects
-				var reflectedClosestInfo = closestInfo;
-				var reflectedRay = ray;
-				ref var material = ref closestObject.material;
+				ref readonly var closestObject = ref objs[closestObjectIdx];
+				ref readonly var material = ref closestObject.material;
 
 				// diffuse surface normal
-				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * material.roughness) / (closestDis + 1));
-				reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
-				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
+				Vec3 reflectedNormal = closestNormal + ((randomVec * material.roughness) / (closestDis + 1));
+				Vec3 reflectedDirection = rayDirection.Reflect(reflectedNormal.Normalize());
+				Vec3 reflectedOrigin = closestPoint - (reflectedDirection * .0001f);// move a little off surface to correct for floating point errors
 
 				// gather surface light
-				GatherLight(closestObject, reflectedClosestInfo, ref light, randomVec);
+				GatherLight(in closestObject, closestPoint, reflectedNormal, ref light, randomVec, objs, lights, ambient);
 
 				// trace from this reflected path
 				maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 				var reflectedLight = new Color();
-				Trace(reflectedRay, ref reflectedLight, ref maxBounce, randomVec);
+				Trace(reflectedOrigin, reflectedDirection, ref reflectedLight, ref maxBounce, randomVec, objs, lights, ambient);
 
 				// material (reflection)
-				Num fresnel = 1 - Vec3.FresnelSchlickZero(ray.direction, closestInfo.normal);
+				Num fresnel = 1 - Vec3.FresnelSchlickZero(rayDirection, closestNormal);
 				light += Color.Lerp(reflectedLight, reflectedLight * material.color, material.metalic * fresnel) * material.reflectiveness;
 				
 				// volume fog tracing taking into account shadows
 				#if !DISABLE_FOG
-				var fogPos = ray.origin;
-				var fogStep = ray.direction * volumeFogStep;
+				var fogPos = rayOrigin;
+				var fogStep = rayDirection * volumeFogStep;
 				int maxVolumeFogStepsClamped = (int)MATH.Min(closestDis / volumeFogStep, maxVolumeFogSteps);
-				for (int l = 0; l != pointLights.Length; ++l)
+				for (int l = 0; l < lights.Length; ++l)
 				{
 					Num fogBrightness = 0;
-					var pointLight = pointLights[l];
-					for (int i = 0; i != maxVolumeFogStepsClamped; ++i)
+					ref readonly var pointLight = ref lights[l];
+					for (int i = 0; i < maxVolumeFogStepsClamped; ++i)
 					{
 						fogPos += fogStep;
-						if (!IsInShadow(pointLight, fogPos, randomVec, out var lightDis, out var lightRay)) fogBrightness += 1 / MATH.Pow(lightDis + 1, 4);
+						if (!IsInShadow(in pointLight, fogPos, randomVec, objs, out var lightDis, out _)) fogBrightness += 1 / MATH.Pow4(lightDis + 1);
 					}
 					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
@@ -765,16 +901,16 @@ namespace SimpleRayBench
 			{
 				// volume fog tracing taking into account shadows (optimized for when nothing is hit)
 				#if !DISABLE_FOG
-				var fogPos = ray.origin;
-				var fogStep = ray.direction * volumeFogStep;
-				for (int l = 0; l != pointLights.Length; ++l)
+				var fogPos = rayOrigin;
+				var fogStep = rayDirection * volumeFogStep;
+				for (int l = 0; l < lights.Length; ++l)
 				{
 					Num fogBrightness = 0;
-					var pointLight = pointLights[l];
-					for (int i = 0; i != maxVolumeFogSteps; ++i)
+					ref readonly var pointLight = ref lights[l];
+					for (int i = 0; i < maxVolumeFogSteps; ++i)
 					{
 						fogPos += fogStep;
-						if (!IsInShadow(pointLight, fogPos, randomVec, out var lightDis, out var lightRay)) fogBrightness += 1 / MATH.Pow(lightDis + 1, 4);
+						if (!IsInShadow(in pointLight, fogPos, randomVec, objs, out var lightDis, out _)) fogBrightness += 1 / MATH.Pow4(lightDis + 1);
 					}
 					light += pointLight.color * fogBrightness * volumeFogStep * .1f;
 				}
@@ -785,37 +921,38 @@ namespace SimpleRayBench
 			return false;
 		}
 
-		static void GatherLight(Obj obj, in HitInfo info, ref Color light, in Vec3 randomVec)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		static void GatherLight(in Obj obj, Vec3 infoPoint, Vec3 infoNormal, ref Color light, Vec3 randomVec, Obj[] objs, PointLight[] lights, Color ambient)
 		{
 			var objColor = obj.material.color;
 
 			// ambient
-			light += objColor * ambientLight;
+			light += objColor * ambient;
 			
 			// point
-			for (int l = 0; l != pointLights.Length; ++l)
+			for (int l = 0; l < lights.Length; ++l)
 			{
-				var pointLight = pointLights[l];
+				ref readonly var pointLight = ref lights[l];
 				
 				// diffuse
-				if (!IsInShadow(pointLights[l], info.point, randomVec, out var lightDis, out var lightRay))
+				if (!IsInShadow(in pointLight, infoPoint, randomVec, objs, out var lightDis, out var lightDir))
 				{
-					Num d = MATH.Max(info.normal.Dot(lightRay.direction), 0);
-					d /= MATH.Pow(lightDis + 1, 4);
+					Num d = MATH.Max(infoNormal.Dot(lightDir), 0);
+					d /= MATH.Pow4(lightDis + 1);
 					light += objColor * pointLight.color * d;
 				}
 			}
 		}
 		
-		static bool IsInShadow(PointLight pointLight, in Vec3 point, in Vec3 randomVec, out Num lightDis, out Ray lightRay)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		static bool IsInShadow(in PointLight pointLight, Vec3 point, Vec3 randomVec, Obj[] objs, out Num lightDis, out Vec3 lightDir)
 		{
 			var softVec = (pointLight.position + (randomVec * pointLight.radius)) - point;
 			lightDis = softVec.Length();
-			lightRay = new Ray(point, softVec.Normalize());
-			for (int o = 0; o != objects.Length; ++o)
+			lightDir = softVec.Normalize();
+			for (int o = 0; o < objs.Length; ++o)
 			{
-				var obj = objects[o];
-				if (obj.Hit(lightRay, out var hitInfo) && (hitInfo.point - point).Length() <= lightDis)
+				if (objs[o].Hit(point, lightDir, out var hitPoint, out _) && (hitPoint - point).Length() <= lightDis)
 				{
 					return true;
 				}
