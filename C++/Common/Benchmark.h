@@ -19,7 +19,7 @@ namespace SimpleRayBench
 	class RandomUtil
 	{
 	private:
-		static Num offsetX, offsetY;
+		static thread_local Num offsetX, offsetY;
 
 	public:
 		inline
@@ -366,6 +366,7 @@ namespace SimpleRayBench
 
 		Sphere(Vec3 center, float radius, Material material)
 		{
+			type = ObjType_Sphere;
 			this->center = center;
 			this->radius = radius;
 			this->material = material;
@@ -389,6 +390,7 @@ namespace SimpleRayBench
 
 		Plane(Vec3 center, Vec3 normal, Material material)
 		{
+			type = ObjType_Plane;
 			this->center = center;
 			this->normal = normal.Normalize();
 			this->material = material;
@@ -426,12 +428,13 @@ namespace SimpleRayBench
 	};
 
 	#ifndef VIRTUAL_ON
+	inline
 	bool Obj::Hit(Ray& ray, HitInfo& info)
 	{
 		switch (type)
 		{
-			case ObjType_Plane: return ((Sphere*)this)->HitSphere(ray, info);
-			case ObjType_Sphere: return ((Plane*)this)->HitPlane(ray, info);
+			case ObjType_Sphere: return ((Sphere*)this)->HitSphere(ray, info);
+			case ObjType_Plane: return ((Plane*)this)->HitPlane(ray, info);
 		}
 
 		info = HitInfo();
@@ -913,8 +916,8 @@ namespace SimpleRayBench
 
 	Color Benchmark::fogColor = Color(.25f, .25f, .25f);
 
-	float RandomUtil::offsetX;
-	float RandomUtil::offsetY;
+	thread_local float RandomUtil::offsetX;
+	thread_local float RandomUtil::offsetY;
 
 	int Benchmark::width;
 	int Benchmark::height;
