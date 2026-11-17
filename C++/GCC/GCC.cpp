@@ -1,5 +1,5 @@
 #include <iostream>
-#include "../../Common/Benchmark_Main.h"
+#include "../Common/Benchmark_Main.h"
 using namespace SimpleRayBench;
 
 int main()
