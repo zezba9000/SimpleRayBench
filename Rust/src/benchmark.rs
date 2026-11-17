@@ -216,7 +216,7 @@ impl Vec3
     #[inline(always)]
     pub fn fresnel_schlick_zero(ray_direction: Vec3, normal: Vec3) -> Num
     {
-        (1.0 - (-ray_direction).dot(normal).max(0.0)).powf(5.0)
+        (1.0 - (-ray_direction).dot(normal).max(0.0)).powi(5)
     }
 }
 
@@ -405,6 +405,7 @@ impl Ray
         Self { origin, direction }
     }
 
+    #[inline(always)]
     pub fn hit_sphere(&self, sphere_center: Vec3, sphere_radius: Num, info: &mut HitInfo) -> bool
     {
         // if ray pointing wrong direction ignore
@@ -497,7 +498,7 @@ impl Obj
         }
     }
 
-    //#[inline(always)]
+    #[inline(always)]
     pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool
     {
         match &self.obj_type
@@ -523,7 +524,7 @@ impl Sphere
         Self { center, radius }
     }
 
-    //#[inline(always)]
+    #[inline(always)]
     pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool
     {
         ray.hit_sphere(self.center, self.radius, info)
@@ -548,7 +549,7 @@ impl Plane
         }
     }
 
-    //#[inline(always)]
+    #[inline(always)]
     pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
         // if ray pointing wrong direction ignore
         if ray.direction.dot(self.normal) >= 0.0
@@ -838,12 +839,12 @@ impl Scene
                         let mut light_ray = Ray::default();
                         if !self.is_in_shadow(
                             point_light,
-                            &fog_pos,
-                            random_vec,
+                            fog_pos,
+                            *random_vec,
                             &mut light_dis,
                             &mut light_ray,
                         ) {
-                            fog_brightness += 1.0 / (light_dis + 1.0).powf(4.0);
+                            fog_brightness += 1.0 / (light_dis + 1.0).powi(4);
                         }
                     }
                     *light += point_light.color * fog_brightness * volumeFogStep * 0.1;
@@ -870,12 +871,12 @@ impl Scene
                         let mut light_ray = Ray::default();
                         if !self.is_in_shadow(
                             point_light,
-                            &fog_pos,
-                            random_vec,
+                            fog_pos,
+                            *random_vec,
                             &mut light_dis,
                             &mut light_ray,
                         ) {
-                            fog_brightness += 1.0 / (light_dis + 1.0).powf(4.0);
+                            fog_brightness += 1.0 / (light_dis + 1.0).powi(4);
                         }
                     }
                     *light += point_light.color * fog_brightness * volumeFogStep * 0.1;
@@ -887,6 +888,7 @@ impl Scene
         false
     }
 
+    #[inline(always)]
     pub fn gather_light(&self, obj: &Obj, info: &HitInfo, light: &mut Color, random_vec: &Vec3)
     {
         let obj_color = obj.material.color;
@@ -902,34 +904,35 @@ impl Scene
             let mut light_ray = Ray::default();
             if !self.is_in_shadow(
                 point_light,
-                &info.point,
-                random_vec,
+                info.point,
+                *random_vec,
                 &mut light_dis,
                 &mut light_ray,
             ) {
                 let mut d = info.normal.dot(light_ray.direction).max(0.0);
-                d /= (light_dis + 1.0).powf(4.0);
+                d /= (light_dis + 1.0).powi(4);
                 *light += obj_color * point_light.color * d;
             }
         }
     }
 
+    #[inline(always)]
     pub fn is_in_shadow(
         &self,
         point_light: &PointLight,
-        point: &Vec3,
-        random_vec: &Vec3,
+        point: Vec3,
+        random_vec: Vec3,
         light_dis: &mut Num,
         light_ray: &mut Ray,
     ) -> bool {
-        let soft_vec = (point_light.position + (*random_vec * point_light.radius)) - *point;
+        let soft_vec = (point_light.position + (random_vec * point_light.radius)) - point;
         *light_dis = soft_vec.length();
-        *light_ray = Ray::new(*point, soft_vec.normalize());
+        *light_ray = Ray::new(point, soft_vec.normalize());
         
         for obj in &self.objects
         {
             let mut hit_info = HitInfo::default();
-            if obj.hit(light_ray, &mut hit_info) && (hit_info.point - *point).length() <= *light_dis
+            if obj.hit(light_ray, &mut hit_info) && (hit_info.point - point).length() <= *light_dis
             {
                 return true;
             }
