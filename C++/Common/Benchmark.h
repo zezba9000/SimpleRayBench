@@ -60,13 +60,13 @@ namespace SimpleRayBench
 		}
 
 		inline
-		Color operator+(const Color& p2) const
+		Color operator+(const Color p2) const
 		{
 			return Color(r + p2.r, g + p2.g, b + p2.b);
 		}
 
 		inline
-		void operator+=(const Color& p1)
+		void operator+=(const Color p1)
 		{
 			this->r += p1.r;
 			this->g += p1.g;
@@ -74,25 +74,25 @@ namespace SimpleRayBench
 		}
 
 		inline
-		Color operator-(const Color& p2) const
+		Color operator-(const Color p2) const
 		{
 			return Color(r - p2.r, g - p2.g, b - p2.b);
 		}
 
 		inline
-		Color operator*(const Color& p2) const
+		Color operator*(const Color p2) const
 		{
 			return Color(r * p2.r, g * p2.g, b * p2.b);
 		}
 
 		inline
-		friend Color operator*(const Color& p1, Num p2)
+		friend Color operator*(const Color p1, Num p2)
 		{
 			return Color(p1.r * p2, p1.g * p2, p1.b * p2);
 		}
 
 		inline
-		friend Color operator/(const Color& p1, Num p2)
+		friend Color operator/(const Color p1, Num p2)
 		{
 			return Color(p1.r / p2, p1.g / p2, p1.b / p2);
 		}
@@ -130,13 +130,13 @@ namespace SimpleRayBench
 		}
 
 		inline
-		Vec3 operator +(const Vec3& p2) const
+		Vec3 operator +(const Vec3 p2) const
 		{
 			return Vec3(x + p2.x, y + p2.y, z + p2.z);
 		}
 
 		inline
-		void operator+=(const Vec3& p1)
+		void operator+=(const Vec3 p1)
 		{
 			this->x += p1.x;
 			this->y += p1.y;
@@ -144,13 +144,13 @@ namespace SimpleRayBench
 		}
 
 		inline
-		Vec3 operator -(const Vec3& p2) const
+		Vec3 operator -(const Vec3 p2) const
 		{
 			return Vec3(x - p2.x, y - p2.y, z - p2.z);
 		}
 
 		inline
-		friend Vec3 operator-(const Vec3& p1, Num p2)
+		friend Vec3 operator-(const Vec3 p1, Num p2)
 		{
 			return Vec3(p1.x - p2, p1.y - p2, p1.z - p2);
 		}
@@ -162,31 +162,31 @@ namespace SimpleRayBench
 		}
 
 		inline
-		Vec3 operator*(const Vec3& p2) const
+		Vec3 operator*(const Vec3 p2) const
 		{
 			return Vec3(x * p2.x, y * p2.y, z * p2.z);
 		}
 
 		inline
-		friend Vec3 operator*(const Vec3& p1, Num p2)
+		friend Vec3 operator*(const Vec3 p1, Num p2)
 		{
 			return Vec3(p1.x * p2, p1.y * p2, p1.z * p2);
 		}
 
 		inline
-		friend Vec3 operator*(Num p1, const Vec3& p2)
+		friend Vec3 operator*(Num p1, const Vec3 p2)
 		{
 			return Vec3(p1 * p2.x, p1 * p2.y, p1 * p2.z);
 		}
 
 		inline
-		Vec3 operator/(const Vec3& p2) const
+		Vec3 operator/(const Vec3 p2) const
 		{
 			return Vec3(x / p2.x, y / p2.y, z / p2.z);
 		}
 
 		inline
-		friend Vec3 operator/(const Vec3& p1, Num p2)
+		friend Vec3 operator/(const Vec3 p1, Num p2)
 		{
 			return Vec3(p1.x / p2, p1.y / p2, p1.z / p2);
 		}
