@@ -1,25 +1,9 @@
-#include <iostream>
-#include "../Common/Benchmark.h"
-#include "../Common/Utils.h"
-
-#include <ctime>
-#include <chrono>
-
-using namespace SimpleRayBench;
+#include "../../Common/Benchmark_Main.h"
+#include <stdio.h>
 
 int main()
 {
-	const int size = 512;// image size
-	Benchmark::Init(size, size, 200);
-
-	auto start = std::chrono::high_resolution_clock::now();
-	auto movie = Benchmark::Render(false);// run benchmark
-	auto end = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> sec = end - start;
-	std::cout << "Render Time: " << sec.count() << "s" << std::endl;
-
-	Utils::SaveMovieData_PPM("image.ppm", movie);
-	Benchmark::Dispose();
-
+	RawMovie* movie = Benchmark_Main_Run();
+	Benchmark_Main_Save(movie);
 	return 0;
 }

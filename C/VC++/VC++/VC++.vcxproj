@@ -277,6 +277,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Common\Benchmark.h" />
+    <ClInclude Include="..\..\Common\Benchmark_Main.h" />
     <ClInclude Include="..\..\Common\LangUtils.h" />
     <ClInclude Include="..\..\Common\Utils.h" />
   </ItemGroup>
