@@ -12,8 +12,8 @@ pub const DISABLE_FOG: bool = false;
 
 pub struct RandomUtil;
 
-static mut OFFSET_X: f32 = 0.0;
-static mut OFFSET_Y: f32 = 0.0;
+static mut OFFSET_X: Num = 0.0;
+static mut OFFSET_Y: Num = 0.0;
 
 impl RandomUtil {
     #[inline(always)]
@@ -23,8 +23,8 @@ impl RandomUtil {
         const randoValueZ: Num = 43758.543123;
 
         unsafe {
-            u += OFFSET_X as Num;
-            v += OFFSET_Y as Num;
+            u += OFFSET_X;
+            v += OFFSET_Y;
             OFFSET_X += 0.5;
             OFFSET_Y += 0.75;
         }
@@ -298,124 +298,105 @@ impl Ray {
         let sqrt_disc = disc.sqrt();
         let inv_a = 1.0 / a;
         let t1 = (-b - sqrt_disc) * inv_a;
-        // let t2 = (-b + sqrt_disc) * inv_a;
 
         info.point = self.origin + t1 * self.direction;
-        // info.point = self.origin + t2 * self.direction;
         info.normal = (info.point - sphere_center).normalize();
 
         true
     }
 }
 
-pub trait Obj: Sync + Send {
-    fn color(&self) -> Color;
-    fn roughness(&self) -> Num;
-    fn reflectiveness(&self) -> Num;
-    fn metalic(&self) -> Num;
-    fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool;
-}
-
-pub struct Sphere {
+#[derive(Copy, Clone, Default)]
+pub struct Material {
     pub color: Color,
     pub roughness: Num,
     pub reflectiveness: Num,
     pub metalic: Num,
-    pub center: Vec3,
-    pub radius: f32,
 }
 
-impl Sphere {
-    pub fn new(
-        center: Vec3,
-        radius: f32,
-        color: Color,
-        roughness: Num,
-        reflectiveness: Num,
-        metalic: Num,
-    ) -> Self {
+impl Material {
+    #[inline(always)]
+    pub const fn new(color: Color, roughness: Num, reflectiveness: Num, metalic: Num) -> Self {
         Self {
             color,
             roughness,
             reflectiveness,
             metalic,
-            center,
-            radius,
         }
     }
 }
 
-impl Obj for Sphere {
+#[derive(Copy, Clone)]
+pub enum ObjType {
+    Plane(Plane),
+    Sphere(Sphere),
+}
+
+#[derive(Copy, Clone)]
+pub struct Obj {
+    pub obj_type: ObjType,
+    pub material: Material,
+}
+
+impl Obj {
     #[inline(always)]
-    fn color(&self) -> Color {
-        self.color
-    }
-    #[inline(always)]
-    fn roughness(&self) -> Num {
-        self.roughness
-    }
-    #[inline(always)]
-    fn reflectiveness(&self) -> Num {
-        self.reflectiveness
-    }
-    #[inline(always)]
-    fn metalic(&self) -> Num {
-        self.metalic
+    pub fn new_plane(center: Vec3, normal: Vec3, material: Material) -> Self {
+        Self {
+            obj_type: ObjType::Plane(Plane::new(center, normal)),
+            material,
+        }
     }
 
-    fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
-        ray.hit_sphere(self.center, self.radius as Num, info)
+    #[inline(always)]
+    pub fn new_sphere(center: Vec3, radius: Num, material: Material) -> Self {
+        Self {
+            obj_type: ObjType::Sphere(Sphere::new(center, radius)),
+            material,
+        }
+    }
+
+    //#[inline(always)]
+    pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
+        match &self.obj_type {
+            ObjType::Sphere(sphere) => sphere.hit(ray, info),
+            ObjType::Plane(plane) => plane.hit(ray, info),
+        }
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct Sphere {
+    pub center: Vec3,
+    pub radius: Num,
+}
+
+impl Sphere {
+    pub fn new(center: Vec3, radius: Num) -> Self {
+        Self { center, radius }
+    }
+
+    //#[inline(always)]
+    pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
+        ray.hit_sphere(self.center, self.radius, info)
+    }
+}
+
+#[derive(Copy, Clone)]
 pub struct Plane {
-    pub color: Color,
-    pub roughness: Num,
-    pub reflectiveness: Num,
-    pub metalic: Num,
     pub center: Vec3,
     pub normal: Vec3,
 }
 
 impl Plane {
-    pub fn new(
-        center: Vec3,
-        normal: Vec3,
-        color: Color,
-        roughness: Num,
-        reflectiveness: Num,
-        metalic: Num,
-    ) -> Self {
+    pub fn new(center: Vec3, normal: Vec3) -> Self {
         Self {
-            color,
-            roughness,
-            reflectiveness,
-            metalic,
             center,
             normal: normal.normalize(),
         }
     }
-}
 
-impl Obj for Plane {
-    #[inline(always)]
-    fn color(&self) -> Color {
-        self.color
-    }
-    #[inline(always)]
-    fn roughness(&self) -> Num {
-        self.roughness
-    }
-    #[inline(always)]
-    fn reflectiveness(&self) -> Num {
-        self.reflectiveness
-    }
-    #[inline(always)]
-    fn metalic(&self) -> Num {
-        self.metalic
-    }
-
-    fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
+    //#[inline(always)]
+    pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
         // if ray pointing wrong direction ignore
         if ray.direction.dot(self.normal) >= 0.0 {
             *info = HitInfo::default();
@@ -555,7 +536,7 @@ static mut FRAMES: i32 = 0;
 static mut MOVIE: Option<Box<RawMovie>> = None;
 static mut CAMERA: Option<Box<Camera>> = None;
 static mut OBJECTS_LENGTH: usize = 0;
-static mut OBJECTS: Vec<Box<dyn Obj>> = Vec::new();
+static mut OBJECTS: Vec<Obj> = Vec::new();
 static mut AMBIENT_LIGHT: Color = Color::new(0.0, 0.0, 0.0);
 static mut POINT_LIGHTS_LENGTH: usize = 0;
 static mut POINT_LIGHTS: Vec<PointLight> = Vec::new();
@@ -587,46 +568,31 @@ impl Benchmark {
             // init scene objects
             OBJECTS_LENGTH = 5;
             OBJECTS = vec![
-                Box::new(Plane::new(
+                Obj::new_plane(
                     Vec3::new(0.0, -0.4, 0.0),
                     Vec3::new(0.0, 1.0, 0.0),
-                    Color::new(0.3, 0.3, 0.3),
-                    0.03 * roughnessMul,
-                    1.0,
-                    0.0,
-                )),
-                Box::new(Sphere::new(
+                    Material::new(Color::new(0.3, 0.3, 0.3), 0.03 * roughnessMul, 1.0, 0.0),
+                ),
+                Obj::new_sphere(
                     Vec3::new(0.0, 0.0, -2.0),
                     0.33,
-                    Color::new(1.0, 0.0, 0.0),
-                    0.0 * roughnessMul,
-                    0.25,
-                    0.0,
-                )),
-                Box::new(Sphere::new(
+                    Material::new(Color::new(1.0, 0.0, 0.0), 0.0 * roughnessMul, 0.25, 0.0),
+                ),
+                Obj::new_sphere(
                     Vec3::new(-0.25, 0.5, -1.5),
                     0.25,
-                    Color::new(0.0, 1.0, 0.0),
-                    0.0 * roughnessMul,
-                    1.0,
-                    1.0,
-                )),
-                Box::new(Sphere::new(
+                    Material::new(Color::new(0.0, 1.0, 0.0), 0.0 * roughnessMul, 1.0, 1.0),
+                ),
+                Obj::new_sphere(
                     Vec3::new(1.0, -0.75, -2.0),
                     1.0,
-                    Color::new(0.0, 0.0, 1.0),
-                    0.0 * roughnessMul,
-                    1.0,
-                    1.0,
-                )),
-                Box::new(Sphere::new(
+                    Material::new(Color::new(0.0, 0.0, 1.0), 0.0 * roughnessMul, 1.0, 1.0),
+                ),
+                Obj::new_sphere(
                     Vec3::new(0.2, 0.25, -1.5),
                     0.1,
-                    Color::new(1.0, 1.0, 0.0),
-                    0.0 * roughnessMul,
-                    1.0,
-                    0.5,
-                )),
+                    Material::new(Color::new(1.0, 1.0, 0.0), 0.0 * roughnessMul, 1.0, 0.5),
+                ),
             ];
 
             // init scene lights
@@ -845,11 +811,11 @@ impl Benchmark {
     pub fn trace(ray: &Ray, light: &mut Color, max_bounce: &mut i32, random_vec: &Vec3) -> bool {
         unsafe {
             // find closest object
-            let mut closest_object: Option<&dyn Obj> = None;
+            let mut closest_object: Option<&Obj> = None;
             let mut closest_dis = Num::MAX;
             let mut closest_info = HitInfo::default();
             for o in 0..OBJECTS_LENGTH {
-                let obj = OBJECTS[o].as_ref();
+                let obj = &OBJECTS[o];
                 let mut info = HitInfo::default();
                 if obj.hit(ray, &mut info) {
                     let dis = (ray.origin - info.point).length();
@@ -892,10 +858,11 @@ impl Benchmark {
                 // buffer diffuse pass state objects
                 let mut reflected_closest_info = closest_info;
                 let mut reflected_ray = *ray;
+                let material = &closest_obj.material;
 
                 // diffuse surface normal
                 reflected_closest_info.normal = closest_info.normal
-                    + ((*random_vec * closest_obj.roughness()) / (closest_dis + 1.0));
+                    + ((*random_vec * material.roughness) / (closest_dis + 1.0));
                 reflected_ray.direction = ray
                     .direction
                     .reflect(reflected_closest_info.normal.normalize());
@@ -918,9 +885,9 @@ impl Benchmark {
                 let fresnel = 1.0 - Vec3::fresnel_schlick_zero(ray.direction, closest_info.normal);
                 *light += Color::lerp(
                     reflected_light,
-                    reflected_light * closest_obj.color(),
-                    closest_obj.metalic() * fresnel,
-                ) * closest_obj.reflectiveness();
+                    reflected_light * material.color,
+                    material.metalic * fresnel,
+                ) * material.reflectiveness;
 
                 // volume fog tracing taking into account shadows
                 if !DISABLE_FOG {
@@ -982,9 +949,9 @@ impl Benchmark {
         }
     }
 
-    pub fn gather_light(obj: &dyn Obj, info: &HitInfo, light: &mut Color, random_vec: &Vec3) {
+    pub fn gather_light(obj: &Obj, info: &HitInfo, light: &mut Color, random_vec: &Vec3) {
         unsafe {
-            let obj_color = obj.color();
+            let obj_color = obj.material.color;
 
             // ambient
             *light += obj_color * AMBIENT_LIGHT;
@@ -1023,7 +990,7 @@ impl Benchmark {
             *light_dis = soft_vec.length();
             *light_ray = Ray::new(*point, soft_vec.normalize());
             for o in 0..OBJECTS_LENGTH {
-                let obj = OBJECTS[o].as_ref();
+                let obj = &OBJECTS[o];
                 let mut hit_info = HitInfo::default();
                 if obj.hit(light_ray, &mut hit_info)
                     && (hit_info.point - *point).length() <= *light_dis
