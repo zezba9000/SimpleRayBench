@@ -301,10 +301,8 @@ namespace SimpleRayBench
 			Num sqrtDisc = MATH::Sqrt(disc);
 			Num invA = 1 / a;
 			Num t1 = (-b - sqrtDisc) * invA;
-			//Num t2 = (-b + sqrtDisc) * invA;
 
 			info.point = origin + t1 * direction;
-			//info.point = origin + t2 * direction;
 			info.normal = (info.point - sphereCenter).Normalize();
 
 			return true;
@@ -344,8 +342,8 @@ namespace SimpleRayBench
 	class Obj
 	{
 	public:
-		Material material;
 		ObjType type;
+		Material material;
 
 		Obj()
 		{

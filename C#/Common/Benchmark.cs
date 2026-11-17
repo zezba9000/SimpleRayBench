@@ -284,8 +284,8 @@ namespace SimpleRayBench
 
 	abstract class Obj
 	{
-		public Material material;
 		public ObjType type;
+		public Material material;
 
 		#if VIRTUAL_ON
 		public abstract bool Hit(in Ray ray, out HitInfo info);

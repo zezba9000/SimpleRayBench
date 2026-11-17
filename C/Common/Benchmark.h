@@ -291,29 +291,53 @@ BOOL Ray_HitSphere(Ray* this, Vec3 sphereCenter, Num sphereRadius, HitInfo* info
 	Num sqrtDisc = MATH_Sqrt(disc);
 	Num invA = 1 / a;
 	Num t1 = (-b - sqrtDisc) * invA;
-	//Num t2 = (-b + sqrtDisc) * invA;
 
 	info->point = Vec3_Add(this->origin, Vec3_Mul3(t1, this->direction));
-	//info.point = origin + t2 * direction;
 	info->normal = Vec3_Normalize(Vec3_Sub(info->point, sphereCenter));
 
 	return TRUE;
 }
 
-typedef struct Obj
+typedef struct Material
 {
 	Color color;
 	Num roughness;
 	Num reflectiveness, metalic;
+}Material;
+
+Material Material_Constructor()
+{
+	Material this = {0};
+	return this;
+}
+
+Material Material_Constructor2(Color color, Num roughness, Num reflectiveness, Num metalic)
+{
+	Material this;
+	this.color = color;
+	this.roughness = roughness;
+	this.reflectiveness = reflectiveness;
+	this.metalic = metalic;
+	return this;
+}
+
+typedef enum ObjType
+{
+	ObjType_Plane,
+	ObjType_Sphere
+}ObjType;
+
+typedef struct Obj
+{
+	ObjType type;
+	Material material;
 }Obj;
 
-Obj* Obj_Constructor(Color color, Num roughness, Num reflectiveness, Num metalic)
+Obj* Obj_Constructor()
 {
 	Obj* this = malloc(sizeof(Obj));
-	this->color = color;
-	this->roughness = roughness;
-	this->reflectiveness = reflectiveness;
-	this->metalic = metalic;
+	this->material = Material_Constructor();
+	this->type = ObjType_Plane;
 	return this;
 }
 
