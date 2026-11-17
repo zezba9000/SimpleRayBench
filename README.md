@@ -8,4 +8,4 @@ Some platforms may instead render to textures/images to show results
 
 ### Convert Raw Video to mp4
 * Download FFmpeg: https://ffmpeg.org/download.html?utm_source=chatgpt.com
-* Run command: ffmpeg -f image2pipe -framerate 10 -vcodec ppm -i \<input-path-to-image.ppm\> -c:v libx264 -pix_fmt yuv420p <output-path-to-movie.mp4>
+* Run command: `ffmpeg -f image2pipe -framerate 10 -vcodec ppm -i image.ppm -c:v libx264 -pix_fmt yuv420p movie.mp4`
