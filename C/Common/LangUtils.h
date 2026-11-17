@@ -1,6 +1,6 @@
 #pragma once
 #include <math.h>
-#include <thread>
+#include <threads.h>
 
 #if defined(WINDOWS)
 #include <Windows.h>
