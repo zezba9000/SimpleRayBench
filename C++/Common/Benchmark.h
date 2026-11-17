@@ -318,7 +318,14 @@ namespace SimpleRayBench
 		Num roughness;
 		Num reflectiveness, metalic;
 
-		Material() {}
+		Material()
+		{
+			color = Color();
+			roughness = 0;
+			reflectiveness = 0;
+			metalic = 0;
+		}
+
 		Material(Color color, Num roughness, Num reflectiveness, Num metalic)
 		{
 			this->color = color;
@@ -340,7 +347,11 @@ namespace SimpleRayBench
 		Material material;
 		ObjType type;
 
-		Obj() {}
+		Obj()
+		{
+			material = Material();
+			type = ObjType_Plane;
+		}
 
 		#ifdef VIRTUAL_ON
 		virtual bool Hit(Ray& ray, HitInfo& info) = 0;
