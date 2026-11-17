@@ -4,6 +4,7 @@
 #define NUM32
 //#define NUM64
 //#define DISABLE_FOG
+//#define VIRTUAL_ON
 
 #if defined(NUM32)
 #define Num float
@@ -300,69 +301,105 @@ namespace SimpleRayBench
 			Num sqrtDisc = MATH::Sqrt(disc);
 			Num invA = 1 / a;
 			Num t1 = (-b - sqrtDisc) * invA;
-			//Num t2 = (-b + sqrtDisc) * invA;
 
 			info.point = origin + t1 * direction;
-			//info.point = origin + t2 * direction;
 			info.normal = (info.point - sphereCenter).Normalize();
 
 			return true;
 		}
 	};
 
-	class Obj
+	struct Material
 	{
 	public:
 		Color color;
 		Num roughness;
 		Num reflectiveness, metalic;
 
-		Obj(Color color, Num roughness, Num reflectiveness, Num metalic)
+		Material()
+		{
+			color = Color();
+			roughness = 0;
+			reflectiveness = 0;
+			metalic = 0;
+		}
+
+		Material(Color color, Num roughness, Num reflectiveness, Num metalic)
 		{
 			this->color = color;
 			this->roughness = roughness;
 			this->reflectiveness = reflectiveness;
 			this->metalic = metalic;
 		}
-
-		virtual bool Hit(Ray& ray, HitInfo& info)
-		{
-			return false;
-		}
 	};
 
-	class Sphere : public Obj
+	enum ObjType
+	{
+		ObjType_Plane,
+		ObjType_Sphere
+	};
+
+	class Obj
+	{
+	public:
+		ObjType type;
+		Material material;
+
+		Obj()
+		{
+			material = Material();
+			type = ObjType_Plane;
+		}
+
+		#ifdef VIRTUAL_ON
+		virtual bool Hit(Ray& ray, HitInfo& info) = 0;
+		#else
+		bool Hit(Ray& ray, HitInfo& info);
+		#endif
+	};
+
+	class Sphere final : public Obj
 	{
 	public:
 		Vec3 center;
 		float radius;
 
-		Sphere(Vec3 center, float radius, Color color, Num roughness, Num reflectiveness, Num metalic)
-		: Obj(color, roughness, reflectiveness, metalic)
+		Sphere(Vec3 center, float radius, Material material)
 		{
 			this->center = center;
 			this->radius = radius;
+			this->material = material;
 		}
 
+		#ifdef VIRTUAL_ON
 		virtual bool Hit(Ray& ray, HitInfo& info)
+		#else
+		inline
+		bool HitSphere(Ray& ray, HitInfo& info)
+		#endif
 		{
 			return ray.HitSphere(center, radius, info);
 		}
 	};
 
-	class Plane : public Obj
+	class Plane final : public Obj
 	{
 	public:
 		Vec3 center, normal;
 
-		Plane(Vec3 center, Vec3 normal, Color color, Num roughness, Num reflectiveness, Num metalic)
-		: Obj(color, roughness, reflectiveness, metalic)
+		Plane(Vec3 center, Vec3 normal, Material material)
 		{
 			this->center = center;
 			this->normal = normal.Normalize();
+			this->material = material;
 		}
 
+		#ifdef VIRTUAL_ON
 		virtual bool Hit(Ray& ray, HitInfo& info)
+		#else
+		inline
+		bool HitPlane(Ray& ray, HitInfo& info)
+		#endif
 		{
 			// if ray pointing wrong direction ignore
 			if (ray.direction.Dot(normal) >= 0)
@@ -387,6 +424,20 @@ namespace SimpleRayBench
 			return false;
 		}
 	};
+
+	#ifndef VIRTUAL_ON
+	bool Obj::Hit(Ray& ray, HitInfo& info)
+	{
+		switch (type)
+		{
+			case ObjType_Plane: return ((Sphere*)this)->HitSphere(ray, info);
+			case ObjType_Sphere: return ((Plane*)this)->HitPlane(ray, info);
+		}
+
+		info = HitInfo();
+		return false;
+	}
+	#endif
 
 	class RawImage
 	{
@@ -517,11 +568,11 @@ namespace SimpleRayBench
 			// init scene objects
 			objectsLength = 5;
 			objects = new Obj*[objectsLength];
-			objects[0] = new Plane(Vec3(0, -.4f, 0), Vec3(0, 1, 0), Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0);
-			objects[1] = new Sphere(Vec3(0, 0, -2), .33f, Color(1, 0, 0), 0 * roughnessMul, .25f, 0);
-			objects[2] = new Sphere(Vec3(-.25f, .5f, -1.5f), .25f, Color(0, 1, 0), 0 * roughnessMul, 1, 1);
-			objects[3] = new Sphere(Vec3(1, -.75f, -2), 1, Color(0, 0, 1), 0 * roughnessMul, 1, 1);
-			objects[4] = new Sphere(Vec3(.2f, .25f, -1.5f), .1f, Color(1, 1, 0), 0 * roughnessMul, 1, .5f);
+			objects[0] = new Plane(Vec3(0, -.4f, 0), Vec3(0, 1, 0), Material(Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
+			objects[1] = new Sphere(Vec3(0, 0, -2), .33f, Material(Color(1, 0, 0), 0 * roughnessMul, .25f, 0));
+			objects[2] = new Sphere(Vec3(-.25f, .5f, -1.5f), .25f, Material(Color(0, 1, 0), 0 * roughnessMul, 1, 1));
+			objects[3] = new Sphere(Vec3(1, -.75f, -2), 1, Material(Color(0, 0, 1), 0 * roughnessMul, 1, 1));
+			objects[4] = new Sphere(Vec3(.2f, .25f, -1.5f), .1f, Material(Color(1, 1, 0), 0 * roughnessMul, 1, .5f));
 
 			// init scene lights
 			ambientLight = Color(.05f, .05f, .05f);
@@ -751,9 +802,10 @@ namespace SimpleRayBench
 				// buffer diffuse pass state objects
 				auto reflectedClosestInfo = closestInfo;
 				auto reflectedRay = ray;
+				auto material = &closestObject->material;
 
 				// diffuse surface normal
-				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * closestObject->roughness) / (closestDis + 1));
+				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * material->roughness) / (closestDis + 1));
 				reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
 				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
 
@@ -767,7 +819,7 @@ namespace SimpleRayBench
 
 				// material (reflection)
 				Num fresnel = 1 - Vec3::FresnelSchlickZero(ray.direction, closestInfo.normal);
-				light += Color::Lerp(reflectedLight, reflectedLight * closestObject->color, closestObject->metalic * fresnel) * closestObject->reflectiveness;
+				light += Color::Lerp(reflectedLight, reflectedLight * material->color, material->metalic * fresnel) * material->reflectiveness;
 
 				// volume fog tracing taking into account shadows
 				#if !DISABLE_FOG
@@ -819,7 +871,7 @@ namespace SimpleRayBench
 
 		static void GatherLight(Obj* obj, const HitInfo& info, Color& light, const Vec3& randomVec)
 		{
-			auto objColor = obj->color;
+			auto objColor = obj->material.color;
 
 			// ambient
 			light += objColor * ambientLight;

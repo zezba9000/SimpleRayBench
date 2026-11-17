@@ -1,6 +1,7 @@
 ﻿#define NUM32
 //#define NUM64
 //#define DISABLE_FOG
+//#define VIRTUAL_ON
 
 using System;
 using System.Runtime.CompilerServices;
@@ -252,31 +253,55 @@ namespace SimpleRayBench
 			Num sqrtDisc = MATH.Sqrt(disc);
 			Num invA = 1 / a;
 			Num t1 = (-b - sqrtDisc) * invA;
-			//Num t2 = (-b + sqrtDisc) * invA;
 			
 			info.point = origin + t1 * direction;
-			//info.point = origin + t2 * direction;
 			info.normal = (info.point - sphereCenter).Normalize();
 
 			return true;
 		}
 	}
 
-	abstract class Obj
+	struct Material
 	{
 		public Color color;
 		public Num roughness;
 		public Num reflectiveness, metalic;
 
-		public Obj(Color color, Num roughness, Num reflectiveness, Num metalic)
+		public Material(Color color, Num roughness, Num reflectiveness, Num metalic)
 		{
 			this.color = color;
 			this.roughness = roughness;
 			this.reflectiveness = reflectiveness;
 			this.metalic = metalic;
 		}
+	}
 
+	enum ObjType
+	{
+		Plane,
+		Sphere
+	}
+
+	abstract class Obj
+	{
+		public ObjType type;
+		public Material material;
+
+		#if VIRTUAL_ON
 		public abstract bool Hit(in Ray ray, out HitInfo info);
+		#else
+		public bool Hit(in Ray ray, out HitInfo info)
+		{
+			switch (type)
+			{
+				case ObjType.Sphere: return ((Sphere)this).HitSphere(ray, out info);
+				case ObjType.Plane: return ((Plane)this).HitPlane(ray, out info);
+			}
+
+			info = new HitInfo();
+			return false;
+		}
+		#endif
 	}
 
 	sealed class Sphere : Obj
@@ -284,14 +309,20 @@ namespace SimpleRayBench
 		public Vec3 center;
 		public float radius;
 
-		public Sphere(Vec3 center, float radius, Color color, Num roughness, Num reflectiveness, Num metalic)
-		: base(color, roughness, reflectiveness, metalic)
+		public Sphere(Vec3 center, float radius, Material material)
 		{
+			type = ObjType.Sphere;
 			this.center = center;
 			this.radius = radius;
+			this.material = material;
 		}
 
+		#if VIRTUAL_ON
 		public override bool Hit(in Ray ray, out HitInfo info)
+		#else
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public bool HitSphere(in Ray ray, out HitInfo info)
+		#endif
 		{
 			return ray.HitSphere(center, radius, out info);
 		}
@@ -301,14 +332,20 @@ namespace SimpleRayBench
 	{
 		public Vec3 center, normal;
 
-		public Plane(Vec3 center, Vec3 normal, Color color, Num roughness, Num reflectiveness, Num metalic)
-		: base(color, roughness, reflectiveness, metalic)
+		public Plane(Vec3 center, Vec3 normal, Material material)
 		{
+			type = ObjType.Plane;
 			this.center = center;
 			this.normal = normal.Normalize();
+			this.material = material;
 		}
 
+		#if VIRTUAL_ON
 		public override bool Hit(in Ray ray, out HitInfo info)
+		#else
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public bool HitPlane(in Ray ray, out HitInfo info)
+		#endif
 		{
 			// if ray pointing wrong direction ignore
 			if (ray.direction.Dot(normal) >= 0)
@@ -332,6 +369,7 @@ namespace SimpleRayBench
 			info = new HitInfo();
 			return false;
 		}
+		
 	}
 
 	public class RawImage
@@ -424,15 +462,15 @@ namespace SimpleRayBench
 		const int maxVolumeFogSteps = 250 / 4;// how far can we test the shadow volume for
 		const Num volumeFogStep = .01f * 4;// how little the shadow volume testing step is
 
-		static int width, height, frames;
-		static RawMovie movie;
-		static Camera camera;
-		static Obj[] objects;
-		static Color ambientLight;
-		static PointLight[] pointLights;
+		private static int width, height, frames;
+		private static RawMovie movie;
+		private static Camera camera;
+		private static Obj[] objects;
+		private static Color ambientLight;
+		private static PointLight[] pointLights;
 
-		static RenderThreadData[] threadDatas;
-		static Thread[] threads;
+		private static RenderThreadData[] threadDatas;
+		private static Thread[] threads;
 
 		public static void Init(int width, int height, int frames)
 		{
@@ -449,11 +487,11 @@ namespace SimpleRayBench
 			// init scene objects
 			objects = new Obj[]
 			{
-				new Plane(new Vec3(0, -.4f, 0), new Vec3(0, 1, 0), new Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0),
-				new Sphere(new Vec3(0, 0, -2), .33f, new Color(1, 0, 0), 0 * roughnessMul, .25f, 0),
-				new Sphere(new Vec3(-.25f, .5f, -1.5f), .25f, new Color(0, 1, 0), 0 * roughnessMul, 1, 1),
-				new Sphere(new Vec3(1, -.75f, -2), 1, new Color(0, 0, 1), 0 * roughnessMul, 1, 1),
-				new Sphere(new Vec3(.2f, .25f, -1.5f), .1f, new Color(1, 1, 0), 0 * roughnessMul, 1, .5f)
+				new Plane(new Vec3(0, -.4f, 0), new Vec3(0, 1, 0), new Material(new Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0)),
+				new Sphere(new Vec3(0, 0, -2), .33f, new Material(new Color(1, 0, 0), 0 * roughnessMul, .25f, 0)),
+				new Sphere(new Vec3(-.25f, .5f, -1.5f), .25f, new Material(new Color(0, 1, 0), 0 * roughnessMul, 1, 1)),
+				new Sphere(new Vec3(1, -.75f, -2), 1, new Material(new Color(0, 0, 1), 0 * roughnessMul, 1, 1)),
+				new Sphere(new Vec3(.2f, .25f, -1.5f), .1f, new Material(new Color(1, 1, 0), 0 * roughnessMul, 1, .5f))
 			};
 
 			// init scene lights
@@ -686,9 +724,10 @@ namespace SimpleRayBench
 				// buffer diffuse pass state objects
 				var reflectedClosestInfo = closestInfo;
 				var reflectedRay = ray;
+				ref var material = ref closestObject.material;
 
 				// diffuse surface normal
-				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * closestObject.roughness) / (closestDis + 1));
+				reflectedClosestInfo.normal = closestInfo.normal + ((randomVec * material.roughness) / (closestDis + 1));
 				reflectedRay.direction = ray.direction.Reflect(reflectedClosestInfo.normal.Normalize());
 				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
 
@@ -702,7 +741,7 @@ namespace SimpleRayBench
 
 				// material (reflection)
 				Num fresnel = 1 - Vec3.FresnelSchlickZero(ray.direction, closestInfo.normal);
-				light += Color.Lerp(reflectedLight, reflectedLight * closestObject.color, closestObject.metalic * fresnel) * closestObject.reflectiveness;
+				light += Color.Lerp(reflectedLight, reflectedLight * material.color, material.metalic * fresnel) * material.reflectiveness;
 				
 				// volume fog tracing taking into account shadows
 				#if !DISABLE_FOG
@@ -750,7 +789,7 @@ namespace SimpleRayBench
 
 		static void GatherLight(Obj obj, in HitInfo info, ref Color light, in Vec3 randomVec)
 		{
-			var objColor = obj.color;
+			var objColor = obj.material.color;
 
 			// ambient
 			light += objColor * ambientLight;

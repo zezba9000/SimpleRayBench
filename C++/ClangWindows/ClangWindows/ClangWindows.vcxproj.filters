@@ -29,5 +29,8 @@
     <ClInclude Include="..\..\Common\Utils.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Common\Benchmark_Main.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
