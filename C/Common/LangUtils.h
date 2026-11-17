@@ -4,6 +4,8 @@
 
 #if defined(WINDOWS)
 #include <Windows.h>
+#include <float.h>
+#include <stdio.h>
 #else
 #include <cfloat>
 #include <limits>
@@ -16,7 +18,7 @@
 // Math
 // ===================================
 inline
-double Math_Clamp(double value, double min, double max)
+double MATH_Clamp(double value, double min, double max)
 {
 	if (value < min) return min;
 	if (value > max) return max;
@@ -24,55 +26,55 @@ double Math_Clamp(double value, double min, double max)
 }
 
 inline
-double Math_Sqrt(double value)
+double MATH_Sqrt(double value)
 {
 	return sqrt(value);
 }
 
 inline
-double Math_Sin(double value)
+double MATH_Sin(double value)
 {
 	return sin(value);
 }
 
 inline
-double Math_Cos(double value)
+double MATH_Cos(double value)
 {
 	return cos(value);
 }
 
 inline
-double Math_Floor(double value)
+double MATH_Floor(double value)
 {
 	return floor(value);
 }
 
 inline
-double Math_Pow(double value, double x)
+double MATH_Pow(double value, double x)
 {
 	return pow(value, x);
 }
 
 inline
-double Math_Max(double value, double x)
+double MATH_Max(double value, double x)
 {
 	return fmax(value, x);
 }
 
 inline
-double Math_Min(double value, double x)
+double MATH_Min(double value, double x)
 {
 	return fmin(value, x);
 }
 
 inline
-double Math_Abs(double value)
+double MATH_Abs(double value)
 {
 	return abs(value);
 }
 
 inline
-double Math_MaxValue()
+double MATH_MaxValue()
 {
 	return DBL_MAX;
 }
@@ -81,7 +83,7 @@ double Math_MaxValue()
 // MathF
 // ===================================
 inline
-float Math_Clamp(float value, float min, float max)
+float MATH_Clamp(float value, float min, float max)
 {
 	if (value < min) return min;
 	if (value > max) return max;
@@ -89,55 +91,55 @@ float Math_Clamp(float value, float min, float max)
 }
 
 inline
-float Math_Sqrt(float value)
+float MATH_Sqrt(float value)
 {
 	return sqrt(value);
 }
 
 inline
-float Math_Sin(float value)
+float MATH_Sin(float value)
 {
 	return sin(value);
 }
 
 inline
-float Math_Cos(float value)
+float MATH_Cos(float value)
 {
 	return cos(value);
 }
 
 inline
-float Math_Floor(float value)
+float MATH_Floor(float value)
 {
 	return floor(value);
 }
 
 inline
-float Math_Pow(float value, float x)
+float MATH_Pow(float value, float x)
 {
 	return pow(value, x);
 }
 
 inline
-float Math_Max(float value, float x)
+float MATH_Max(float value, float x)
 {
 	return fmax(value, x);
 }
 
 inline
-float Math_Min(float value, float x)
+float MATH_Min(float value, float x)
 {
 	return fmin(value, x);
 }
 
 inline
-float Math_Abs(float value)
+float MATH_Abs(float value)
 {
 	return abs(value);
 }
 
 inline
-float Math_MaxValue()
+float MATH_MaxValue()
 {
 	return FLT_MAX;
 }

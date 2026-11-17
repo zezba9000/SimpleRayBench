@@ -19,7 +19,7 @@ namespace SimpleRayBench
 	class RandomUtil
 	{
 	private:
-		static float offsetX, offsetY;
+		static Num offsetX, offsetY;
 
 	public:
 		inline
@@ -362,7 +362,7 @@ namespace SimpleRayBench
 	{
 	public:
 		Vec3 center;
-		float radius;
+		Num radius;
 
 		Sphere(Vec3 center, float radius, Material material)
 		{

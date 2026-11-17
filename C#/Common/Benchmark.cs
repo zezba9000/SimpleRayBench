@@ -19,7 +19,7 @@ namespace SimpleRayBench
 {
 	static class RandomUtil
 	{
-		private static float offsetX, offsetY;
+		private static Num offsetX, offsetY;
 		
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static Num NextValue(Num u, Num v)
@@ -307,7 +307,7 @@ namespace SimpleRayBench
 	sealed class Sphere : Obj
 	{
 		public Vec3 center;
-		public float radius;
+		public Num radius;
 
 		public Sphere(Vec3 center, float radius, Material material)
 		{

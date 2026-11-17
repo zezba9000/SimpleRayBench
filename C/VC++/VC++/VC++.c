@@ -1,12 +1,12 @@
-#include <iostream>
+//#include <iostream>
 
 #define WINDOWS
 #define inline __inline
 #include "../../Common/Benchmark.h"
 #include "../../Common/Utils.h"
 
-#include <ctime>
-#include <chrono>
+//#include <ctime>
+//#include <chrono>
 
 int main()
 {
