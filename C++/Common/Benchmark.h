@@ -345,10 +345,10 @@ namespace SimpleRayBench
 		ObjType type;
 		Material material;
 
-		Obj()
+		Obj(ObjType type)
 		{
 			material = Material();
-			type = ObjType_Plane;
+			this->type = type;
 		}
 
 		#ifdef VIRTUAL_ON
@@ -364,7 +364,7 @@ namespace SimpleRayBench
 		Vec3 center;
 		Num radius;
 
-		Sphere(Vec3 center, float radius, Material material)
+		Sphere(Vec3 center, float radius, Material material) : Obj(ObjType_Sphere)
 		{
 			this->center = center;
 			this->radius = radius;
@@ -387,7 +387,7 @@ namespace SimpleRayBench
 	public:
 		Vec3 center, normal;
 
-		Plane(Vec3 center, Vec3 normal, Material material)
+		Plane(Vec3 center, Vec3 normal, Material material) : Obj(ObjType_Plane)
 		{
 			this->center = center;
 			this->normal = normal.Normalize();
@@ -430,8 +430,8 @@ namespace SimpleRayBench
 	{
 		switch (type)
 		{
-			case ObjType_Plane: return ((Sphere*)this)->HitSphere(ray, info);
-			case ObjType_Sphere: return ((Plane*)this)->HitPlane(ray, info);
+			case ObjType_Sphere: return ((Sphere*)this)->HitSphere(ray, info);
+			case ObjType_Plane: return ((Plane*)this)->HitPlane(ray, info);
 		}
 
 		info = HitInfo();
@@ -619,10 +619,6 @@ namespace SimpleRayBench
 		{
 			if (singleThreaded)
 			{
-				// setup ray
-				Ray ray;
-				ray.origin = camera->position;
-
 				// render frames
 				Num widthRange = width - 1;
 				Num heightRange = height - 1;
@@ -630,6 +626,8 @@ namespace SimpleRayBench
 				{
 					std::cout << "Frame:" << f << " rendering" << std::endl;
 					UpdateMovieObjects(f);
+					Ray ray;
+					ray.origin = camera->position;
 					auto colors = movie->frames[f]->colors;
 					for (int y = 0; y != height; ++y)
 					{

@@ -70,7 +70,7 @@ double MATH_Min(double value, double x)
 inline
 double MATH_Abs(double value)
 {
-	return abs(value);
+	return fabs(value);
 }
 
 inline
@@ -93,49 +93,49 @@ float MATH_Clamp(float value, float min, float max)
 inline
 float MATH_Sqrt(float value)
 {
-	return sqrt(value);
+	return sqrtf(value);
 }
 
 inline
 float MATH_Sin(float value)
 {
-	return sin(value);
+	return sinf(value);
 }
 
 inline
 float MATH_Cos(float value)
 {
-	return cos(value);
+	return cosf(value);
 }
 
 inline
 float MATH_Floor(float value)
 {
-	return floor(value);
+	return floorf(value);
 }
 
 inline
 float MATH_Pow(float value, float x)
 {
-	return pow(value, x);
+	return powf(value, x);
 }
 
 inline
 float MATH_Max(float value, float x)
 {
-	return fmax(value, x);
+	return fmaxf(value, x);
 }
 
 inline
 float MATH_Min(float value, float x)
 {
-	return fmin(value, x);
+	return fminf(value, x);
 }
 
 inline
 float MATH_Abs(float value)
 {
-	return abs(value);
+	return fabsf(value);
 }
 
 inline
