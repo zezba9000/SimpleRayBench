@@ -332,11 +332,11 @@ typedef struct Obj
 	Material material;
 }Obj;
 
-Obj* Obj_Constructor()
+Obj Obj_Constructor(ObjType type)
 {
-	Obj* this = malloc(sizeof(Obj));
-	this->material = Material_Constructor();
-	this->type = ObjType_Plane;
+	Obj this;
+	this.material = Material_Constructor();
+	this.type = type;
 	return this;
 }
 
@@ -350,6 +350,7 @@ typedef struct Sphere
 Sphere* Sphere_Constructor(Vec3 center, float radius, Material material)
 {
 	Sphere* this = malloc(sizeof(Sphere));
+	this->base = Obj_Constructor(ObjType_Sphere);
 	this->center = center;
 	this->radius = radius;
 	this->base.material = material;
@@ -371,6 +372,7 @@ typedef struct Plane
 Plane* Plane_Constructor(Vec3 center, Vec3 normal, Material material)
 {
 	Plane* this = malloc(sizeof(Plane));
+	this->base = Obj_Constructor(ObjType_Plane);
 	this->center = center;
 	this->normal = Vec3_Normalize(normal);
 	this->base.material = material;
@@ -387,6 +389,7 @@ BOOL Plane_HitPlane(Plane* this, Ray* ray, HitInfo* info)
 	}
 
 	Num denom = Vec3_Dot2(this->normal, ray->direction);
+	float value = MATH_Abs(denom);
 	if (MATH_Abs(denom) > 0.0001f)
 	{
 		Num t = Vec3_Dot2(Vec3_Sub(this->center, ray->origin), this->normal) / denom;
@@ -406,8 +409,8 @@ BOOL Obj_Hit(Obj* this, Ray* ray, HitInfo* info)
 {
 	switch (this->type)
 	{
-		case ObjType_Plane: return Sphere_HitSphere((Sphere*)this, ray, info);
-		case ObjType_Sphere: return Plane_HitPlane((Plane*)this, ray, info);
+		case ObjType_Sphere: return Sphere_HitSphere((Sphere*)this, ray, info);
+		case ObjType_Plane: return Plane_HitPlane((Plane*)this, ray, info);
 	}
 
 	*info = HitInfo_Constructor();
@@ -618,10 +621,6 @@ RawMovie* Benchmark_Render(BOOL singleThreaded)
 {
 	if (singleThreaded)
 	{
-		// setup ray
-		Ray ray;
-		ray.origin = benchmark.camera->position;
-
 		// render frames
 		Num widthRange = benchmark.width - 1;
 		Num heightRange = benchmark.height - 1;
@@ -629,6 +628,8 @@ RawMovie* Benchmark_Render(BOOL singleThreaded)
 		{
 			printf("Frame: %d rendering\n", f);
 			Benchmark_UpdateMovieObjects(f);
+			Ray ray;
+			ray.origin = benchmark.camera->position;
 			Color* colors = benchmark.movie->frames[f]->colors;
 			for (int y = 0; y != benchmark.height; ++y)
 			{
@@ -644,10 +645,12 @@ RawMovie* Benchmark_Render(BOOL singleThreaded)
 					// trace
 					int maxBounce = maxBounceCount;
 					Color light = Color_Constructor();
-					Benchmark_Trace(&ray, &light, maxBounce, &randomVec);
+					Benchmark_Trace(&ray, &light, &maxBounce, &randomVec);
 
 					// write result
 					colors[x + (y * benchmark.width)] = light;
+					if (light.r != 0)
+					{ }
 				}
 			}
 		}
@@ -732,7 +735,7 @@ void Benchmark_RenderThread(void* dataObj)
 				// trace
 				int maxBounce = maxBounceCount;
 				Color light = Color_Constructor();
-				Benchmark_Trace(&ray, &light, maxBounce, &randomVec);
+				Benchmark_Trace(&ray, &light, &maxBounce, &randomVec);
 
 				// write result
 				colors[x + (y * benchmark.width)] = light;
@@ -794,9 +797,9 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 	// process lighting
 	if (closestObject != NULL)
 	{
-		if (maxBounce <= 0) return FALSE;
-		maxBounce--;
-		int maxBounceReset = maxBounce;
+		if (*maxBounce <= 0) return FALSE;
+		*maxBounce--;
+		int maxBounceReset = *maxBounce;
 
 		// buffer diffuse pass state objects
 		HitInfo reflectedClosestInfo = closestInfo;
@@ -811,7 +814,7 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 		Benchmark_GatherLight(closestObject, &reflectedClosestInfo, light, randomVec);
 
 		// trace from this reflected path
-		maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
+		*maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 		Color reflectedLight = Color_Constructor();
 		Benchmark_Trace(&reflectedRay, &reflectedLight, maxBounce, randomVec);
 

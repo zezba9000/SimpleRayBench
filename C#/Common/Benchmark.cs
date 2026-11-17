@@ -545,10 +545,6 @@ namespace SimpleRayBench
 		{
 			if (singleThreaded)
 			{
-				// setup ray
-				Ray ray;
-				ray.origin = camera.position;
-
 				// render frames
 				Num widthRange = width - 1;
 				Num heightRange = height - 1;
@@ -556,6 +552,8 @@ namespace SimpleRayBench
 				{
 					Console.WriteLine($"Frame:{f} rendering");
 					UpdateMovieObjects(f);
+					Ray ray;
+					ray.origin = camera.position;
 					var colors = movie.frames[f].colors;
 					for (int y = 0; y != height; ++y)
 					{

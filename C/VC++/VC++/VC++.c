@@ -1,26 +1,27 @@
-//#include <iostream>
-
 #define WINDOWS
 #define inline __inline
 #include "../../Common/Benchmark.h"
 #include "../../Common/Utils.h"
 
-//#include <ctime>
-//#include <chrono>
+#include <stdio.h>
 
 int main()
 {
-	/*const int size = 512;// image size
-	Benchmark::Init(size, size, 200);
+	const int size = 512;// image size
+	Benchmark_Init(size, size, 200);
 
-	auto start = std::chrono::high_resolution_clock::now();
-	auto movie = Benchmark::Render(false);// run benchmark
-	auto end = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> sec = end - start;
-	std::cout << "Render Time: " << sec.count() << "s" << std::endl;
+	LARGE_INTEGER freq, start, end;
+	QueryPerformanceFrequency(&freq);
+	QueryPerformanceCounter(&start);
 
-	Utils::SaveMovieData_PPM("image.ppm", movie);
-	Benchmark::Dispose();*/
+	RawMovie* movie = Benchmark_Render(FALSE);// run benchmark
+	
+	QueryPerformanceCounter(&end);
+	double sec = (double)(end.QuadPart - start.QuadPart) / freq.QuadPart;
+	printf("Render Time: %fs\n", sec);
+
+	Utils_SaveMovieData_PPM("image.ppm", movie);
+	Benchmark_Dispose();
 
 	return 0;
 }
