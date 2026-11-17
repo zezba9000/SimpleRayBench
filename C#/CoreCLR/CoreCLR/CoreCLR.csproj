@@ -52,6 +52,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\Common\Benchmark.cs" Link="Benchmark.cs" />
+    <Compile Include="..\..\Common\Benchmark_Main.cs" Link="Benchmark_Main.cs" />
     <Compile Include="..\..\Common\Utils.cs" Link="Utils.cs" />
   </ItemGroup>
 
