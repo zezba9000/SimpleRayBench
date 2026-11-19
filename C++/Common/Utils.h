@@ -11,6 +11,7 @@ namespace SimpleRayBench
 		{
 			*imageDataLength = image->width * image->height * 3;
 			auto data = new char[*imageDataLength];
+			auto channels = reinterpret_cast<unsigned char*>(data);
 			int i = 0;
 			//for (int y = 0; y != image.height; ++y)
 			for (int y = image->height - 1; y != -1; --y)// invert Y
@@ -18,9 +19,9 @@ namespace SimpleRayBench
 				for (int x = 0; x != image->width; ++x)
 				{
 					auto color = image->colors[x + (y * image->width)] * 255;
-					data[i] = (char)Math::Clamp(color.r, 0, 255);
-					data[i + 1] = (char)Math::Clamp(color.g, 0, 255);
-					data[i + 2] = (char)Math::Clamp(color.b, 0, 255);
+					channels[i] = (unsigned char)Math::Clamp(color.r, 0, 255);
+					channels[i + 1] = (unsigned char)Math::Clamp(color.g, 0, 255);
+					channels[i + 2] = (unsigned char)Math::Clamp(color.b, 0, 255);
 					i += 3;
 				}
 			}
@@ -40,14 +41,14 @@ namespace SimpleRayBench
 		{
 			// convert image to SDR data
 			int imageDataLength;
-			char* imageData = ConvertRawImageSDR(image, &imageDataLength);
+			std::unique_ptr<char[]> imageData(ConvertRawImageSDR(image, &imageDataLength));
 
 			// save to file
 			std::ofstream stream;
 			stream.open(filename, std::ios::binary | std::ios::out);
 
 			// write frame
-			WriteFrame_PPM(stream, image->width, image->height, imageData, imageDataLength);
+			WriteFrame_PPM(stream, image->width, image->height, imageData.get(), imageDataLength);
 
 			// finish
 			stream.flush();
@@ -62,14 +63,14 @@ namespace SimpleRayBench
 
 			for (int i = 0; i < movie->frameCount; ++i)
 			{
-				RawImage* image = movie->frames[i];
+				RawImage* image = &movie->frames[i];
 
 				// convert image to SDR data
 				int imageDataLength;
-				char* imageData = ConvertRawImageSDR(image, &imageDataLength);
+				std::unique_ptr<char[]> imageData(ConvertRawImageSDR(image, &imageDataLength));
 
 				// write frame
-				WriteFrame_PPM(stream, image->width, image->height, imageData, imageDataLength);
+				WriteFrame_PPM(stream, image->width, image->height, imageData.get(), imageDataLength);
 			}
 
 			// finish

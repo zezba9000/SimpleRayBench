@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 
@@ -9,6 +9,12 @@ namespace SimpleRayBench
 		public static byte[] ConvertRawImageSDR(RawImage image)
 		{
 			var data = new byte[image.width * image.height * 3];
+			ConvertRawImageSDR(image, data);
+			return data;
+		}
+
+		private static void ConvertRawImageSDR(RawImage image, byte[] data)
+		{
 			int i = 0;
 			//for (int y = 0; y != image.height; ++y)// normal Y
 			for (int y = image.height - 1; y != -1; --y)// invert Y
@@ -23,17 +29,16 @@ namespace SimpleRayBench
 					i += 3;
 				}
 			}
-			return data;
 		}
 
-		private static void WriteFrame_PPM(FileStream stream, int width, int height, byte[] imageData)
+		private static void WriteFrame_PPM(FileStream stream, int width, int height, byte[] imageData, int imageDataLength)
 		{
 			// PPM P6 binary header
 			byte[] header = Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n");
 			stream.Write(header, 0, header.Length);
 
 			// RGB pixel data
-			stream.Write(imageData, 0, imageData.Length);
+			stream.Write(imageData, 0, imageDataLength);
 		}
 
 
@@ -46,7 +51,7 @@ namespace SimpleRayBench
 			using (var stream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.Read))
 			{
 				// write frame
-				WriteFrame_PPM(stream, image.width, image.height, imageData);
+				WriteFrame_PPM(stream, image.width, image.height, imageData, imageData.Length);
 
 				// finish
 				stream.Flush();
@@ -58,13 +63,15 @@ namespace SimpleRayBench
 			// save to file
 			using (var stream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.Read))
 			{
+				var imageData = Array.Empty<byte>();
 				foreach (var image in movie.frames)
 				{
-					// convert image to SDR data
-					byte[] imageData = ConvertRawImageSDR(image);
+					int imageDataLength = image.width * image.height * 3;
+					if (imageData.Length < imageDataLength) imageData = new byte[imageDataLength];
+					ConvertRawImageSDR(image, imageData);
 
 					// write frame
-					WriteFrame_PPM(stream, image.width, image.height, imageData);
+					WriteFrame_PPM(stream, image.width, image.height, imageData, imageDataLength);
 				}
 
 				// finish

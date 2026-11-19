@@ -1,5 +1,10 @@
 #pragma once
 #include "LangUtils.h"
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <system_error>
+#include <vector>
 
 #define NUM32
 //#define NUM64
@@ -19,11 +24,14 @@ namespace SimpleRayBench
 	class RandomUtil
 	{
 	private:
-		static thread_local Num offsetX, offsetY;
+		Num offsetX, offsetY;
 
 	public:
+		RandomUtil(int frame) : offsetX(frame * .5f), offsetY(frame * .75f)
+		{ }
+
 		inline
-		static Num NextValue(Num u, Num v)
+		Num NextValue(Num u, Num v)
 		{
 			#define randoValueX 12.9898f
 			#define randoValueY 78.233f
@@ -230,7 +238,9 @@ namespace SimpleRayBench
 		inline
 		static Num FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 		{
-			return MATH::Pow(1 - MATH::Max((-rayDirection).Dot(normal), 0), 5);
+			Num value = 1 - MATH::Max((-rayDirection).Dot(normal), 0);
+			Num squared = value * value;
+			return squared * squared * value;
 		}
 	};
 
@@ -274,35 +284,32 @@ namespace SimpleRayBench
 			this->direction = direction;
 		}
 
-		bool HitSphere(Vec3 sphereCenter, Num sphereRadius, HitInfo& info)
+		bool HitSphereNumerator(Vec3 sphereCenter, Num sphereRadius, Num a, Num& numerator) const
 		{
-			// if ray pointing wrong direction ignore
-			if (direction.Dot(origin - sphereCenter) >= 0)
-			{
-				info = HitInfo();
-				return false;
-			}
-
-			// compute
 			Vec3 d = origin - sphereCenter;
-			Num a = direction.Dot(direction);
 			Num b = d.Dot(direction);
-			Num c = d.Dot() - sphereRadius * sphereRadius;
+			if (b >= 0) return false;
 
-			// if ray not pointing at object ignore
+			Num c = d.Dot() - sphereRadius * sphereRadius;
 			Num disc = b * b - a * c;
-			if (disc < 0)
+			if (disc < 0) return false;
+
+			numerator = -b - MATH::Sqrt(disc);
+			return true;
+		}
+
+		bool HitSphere(Vec3 sphereCenter, Num sphereRadius, HitInfo& info) const
+		{
+			Num a = direction.Dot();
+			Num numerator;
+			if (!HitSphereNumerator(sphereCenter, sphereRadius, a, numerator))
 			{
 				info = HitInfo();
 				return false;
 			}
 
-			// compute
-			Num sqrtDisc = MATH::Sqrt(disc);
-			Num invA = 1 / a;
-			Num t1 = (-b - sqrtDisc) * invA;
-
-			info.point = origin + t1 * direction;
+			Num t = numerator * (1 / a);
+			info.point = origin + t * direction;
 			info.normal = (info.point - sphereCenter).Normalize();
 
 			return true;
@@ -352,9 +359,11 @@ namespace SimpleRayBench
 		}
 
 		#ifdef VIRTUAL_ON
-		virtual bool Hit(Ray& ray, HitInfo& info) = 0;
+		virtual bool Hit(const Ray& ray, HitInfo& info) const = 0;
+		virtual bool BlocksLight(const Ray& ray, Num a) const = 0;
 		#else
-		bool Hit(Ray& ray, HitInfo& info);
+		bool Hit(const Ray& ray, HitInfo& info) const;
+		bool BlocksLight(const Ray& ray, Num a) const;
 		#endif
 	};
 
@@ -373,18 +382,31 @@ namespace SimpleRayBench
 		}
 
 		#ifdef VIRTUAL_ON
-		virtual bool Hit(Ray& ray, HitInfo& info)
+		bool Hit(const Ray& ray, HitInfo& info) const override
 		#else
 		inline
-		bool HitSphere(Ray& ray, HitInfo& info)
+		bool HitSphere(const Ray& ray, HitInfo& info) const
 		#endif
 		{
 			return ray.HitSphere(center, radius, info);
+		}
+
+		#ifdef VIRTUAL_ON
+		bool BlocksLight(const Ray& ray, Num a) const override
+		#else
+		bool BlocksLight(const Ray& ray, Num a) const
+		#endif
+		{
+			Num numerator;
+			// The hit parameter is numerator / a.
+			return ray.HitSphereNumerator(center, radius, a, numerator) && MATH::Abs(numerator) <= a;
 		}
 	};
 
 	class Plane final : public Obj
 	{
+		static constexpr Num parallelThreshold = .0001f;
+
 	public:
 		Vec3 center, normal;
 
@@ -397,21 +419,14 @@ namespace SimpleRayBench
 		}
 
 		#ifdef VIRTUAL_ON
-		virtual bool Hit(Ray& ray, HitInfo& info)
+		bool Hit(const Ray& ray, HitInfo& info) const override
 		#else
 		inline
-		bool HitPlane(Ray& ray, HitInfo& info)
+		bool HitPlane(const Ray& ray, HitInfo& info) const
 		#endif
 		{
-			// if ray pointing wrong direction ignore
-			if (ray.direction.Dot(normal) >= 0)
-			{
-				info = HitInfo();
-				return false;
-			}
-
 			Num denom = normal.Dot(ray.direction);
-			if (MATH::Abs(denom) > 0.0001f)
+			if (denom < -parallelThreshold)
 			{
 				Num t = (center - ray.origin).Dot(normal) / denom;
 				if (t >= 0)
@@ -425,19 +440,43 @@ namespace SimpleRayBench
 			info = HitInfo();
 			return false;
 		}
+
+		#ifdef VIRTUAL_ON
+		bool BlocksLight(const Ray& ray, Num a) const override
+		#else
+		bool BlocksLight(const Ray& ray, Num a) const
+		#endif
+		{
+			Num denom = normal.Dot(ray.direction);
+			if (denom >= 0 || denom * denom <= a * (parallelThreshold * parallelThreshold)) return false;
+
+			Num offset = (center - ray.origin).Dot(normal);
+			return offset <= 0 && offset >= denom;
+		}
 	};
 
 	#ifndef VIRTUAL_ON
 	inline
-	bool Obj::Hit(Ray& ray, HitInfo& info)
+	bool Obj::Hit(const Ray& ray, HitInfo& info) const
 	{
 		switch (type)
 		{
-			case ObjType_Sphere: return ((Sphere*)this)->HitSphere(ray, info);
-			case ObjType_Plane: return ((Plane*)this)->HitPlane(ray, info);
+			case ObjType_Sphere: return static_cast<const Sphere*>(this)->HitSphere(ray, info);
+			case ObjType_Plane: return static_cast<const Plane*>(this)->HitPlane(ray, info);
 		}
 
 		info = HitInfo();
+		return false;
+	}
+
+	inline
+	bool Obj::BlocksLight(const Ray& ray, Num a) const
+	{
+		switch (type)
+		{
+			case ObjType_Sphere: return static_cast<const Sphere*>(this)->BlocksLight(ray, a);
+			case ObjType_Plane: return static_cast<const Plane*>(this)->BlocksLight(ray, a);
+		}
 		return false;
 	}
 	#endif
@@ -446,13 +485,12 @@ namespace SimpleRayBench
 	{
 	public:
 		int width, height;
-		Color* colors;
+		std::vector<Color> colors;
 
-		RawImage(int width, int height)
+		RawImage(int width, int height) : colors((std::size_t)width * height)
 		{
 			this->width = width;
 			this->height = height;
-			colors = new Color[width * height];
 		}
 	};
 
@@ -461,17 +499,17 @@ namespace SimpleRayBench
 	public:
 		int width, height;
 		int frameCount;
-		RawImage** frames;
+		std::vector<RawImage> frames;
 
 		RawMovie(int width, int height, int frameCount)
 		{
 			this->width = width;
 			this->height = height;
 			this->frameCount = frameCount;
-			frames = new RawImage*[frameCount];
+			frames.reserve(frameCount);
 			for (int i = 0; i != frameCount; ++i)
 			{
-				frames[i] = new RawImage(width, height);
+				frames.emplace_back(width, height);
 			}
 		}
 	};
@@ -521,15 +559,6 @@ namespace SimpleRayBench
 		}
 	};
 
-	class RenderThreadData
-	{
-	public:
-		int index, randomIndex;
-		bool waiting, done, exit;
-		int x, y, xEnd, yEnd;
-		RawImage* image;
-	};
-
 	class Benchmark
 	{
 	public:
@@ -542,19 +571,13 @@ namespace SimpleRayBench
 		#define fogFalloff 1
 		static Color fogColor;
 
+		enum { objectsLength = 5, pointLightsLength = 1 };
 		static int width, height, frames;
-		static RawMovie* movie;
-		static Camera* camera;
-		static int objectsLength;
-		static Obj** objects;
+		static std::unique_ptr<RawMovie> movie;
+		static const Obj* objects[objectsLength];
 		static Color ambientLight;
-		static int pointLightsLength;
-		static PointLight** pointLights;
 
 		static int threadCount;
-		static RenderThreadData** threadDatas;
-		static std::thread** threads;
-		static bool threadsAlive;
 
 		static void Init(int width, int height, int frames)
 		{
@@ -563,195 +586,154 @@ namespace SimpleRayBench
 			Benchmark::height = height;
 			if (frames < 1) frames = 1;
 			Benchmark::frames = frames;
-			movie = new RawMovie(width, height, frames);
-
-			// init camera
-			camera = new Camera(Vec3(0, 0, 0), Vec3(0, 0, -1), Vec3(0, 1, 0));
+			movie.reset(new RawMovie(width, height, frames));
 
 			// init scene objects
-			objectsLength = 5;
-			objects = new Obj*[objectsLength];
-			objects[0] = new Plane(Vec3(0, -.4f, 0), Vec3(0, 1, 0), Material(Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
-			objects[1] = new Sphere(Vec3(0, 0, -2), .33f, Material(Color(1, 0, 0), 0 * roughnessMul, .25f, 0));
-			objects[2] = new Sphere(Vec3(-.25f, .5f, -1.5f), .25f, Material(Color(0, 1, 0), 0 * roughnessMul, 1, 1));
-			objects[3] = new Sphere(Vec3(1, -.75f, -2), 1, Material(Color(0, 0, 1), 0 * roughnessMul, 1, 1));
-			objects[4] = new Sphere(Vec3(.2f, .25f, -1.5f), .1f, Material(Color(1, 1, 0), 0 * roughnessMul, 1, .5f));
-
-			// init scene lights
-			ambientLight = Color(.05f, .05f, .05f);
-			pointLightsLength = 1;
-			pointLights = new PointLight*[pointLightsLength];
-			pointLights[0] = new PointLight(Vec3(.1f, .75f, -2), .01f, Color(1, 1, 1) * 10, 1);
-
-			// start threads
-			threadsAlive = true;
-			threadCount = Environment::ProcessorCount();
-			std::cout << "Thread Count: " << threadCount << std::endl;
-			threadDatas = new RenderThreadData*[threadCount];
-			threads = new std::thread*[threadCount];
-			for (int i = 0; i != threadCount; ++i)
+			static const Plane plane(Vec3(0, -.4f, 0), Vec3(0, 1, 0), Material(Color(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
+			static const Sphere spheres[objectsLength - 1] =
 			{
-				int sectionHeight = height / threadCount;
-				threadDatas[i] = new RenderThreadData();
-				threadDatas[i]->exit = false;
-				threadDatas[i]->waiting = true;
-				threadDatas[i]->done = false;
-				threadDatas[i]->index = i,
-				threadDatas[i]->randomIndex = i % threadCount,
-				threadDatas[i]->x = 0,
-				threadDatas[i]->y = i * sectionHeight,
-				threadDatas[i]->xEnd = width,
-				threadDatas[i]->yEnd = (i * sectionHeight) + sectionHeight;
-				if (i == threadCount - 1) threadDatas[i]->yEnd = height;
-				threads[i] = new std::thread(RenderThread, threadDatas[i]);
-			}
+				Sphere(Vec3(0, 0, -2), .33f, Material(Color(1, 0, 0), 0 * roughnessMul, .25f, 0)),
+				Sphere(Vec3(-.25f, .5f, -1.5f), .25f, Material(Color(0, 1, 0), 0 * roughnessMul, 1, 1)),
+				Sphere(Vec3(1, -.75f, -2), 1, Material(Color(0, 0, 1), 0 * roughnessMul, 1, 1)),
+				Sphere(Vec3(.2f, .25f, -1.5f), .1f, Material(Color(1, 1, 0), 0 * roughnessMul, 1, .5f))
+			};
+			objects[0] = &plane;
+			for (int o = 1; o != objectsLength; ++o) objects[o] = &spheres[o - 1];
+
+			ambientLight = Color(.05f, .05f, .05f);
+
+			// choose the number of render threads
+			threadCount = Environment::ProcessorCount();
+			if (threadCount < 1) threadCount = 1;
+			if (threadCount > frames) threadCount = frames;
+			std::cout << "Thread Count: " << threadCount << std::endl;
 		}
 
 		static void Dispose()
 		{
-			for (int i = 0; i != threadCount; ++i)
-			{
-				auto data = threadDatas[i];
-				data->exit = true;
-				data->done = true;
-				data->waiting = false;
-			}
+			movie.reset();
 		}
 
 		static RawMovie* Render(bool singleThreaded)
 		{
-			if (singleThreaded)
+			int workerCount = singleThreaded ? 1 : threadCount;
+			std::vector<std::thread> threads;
+			threads.reserve(workerCount - 1);
+
+			// each thread renders complete frames, interleaved across the movie
+			int i = 1;
+			try
 			{
-				// render frames
-				Num widthRange = width - 1;
-				Num heightRange = height - 1;
-				for (int f = 0; f != frames; ++f)
-				{
-					std::cout << "Frame:" << f << " rendering" << std::endl;
-					UpdateMovieObjects(f);
-					Ray ray;
-					ray.origin = camera->position;
-					auto colors = movie->frames[f]->colors;
-					for (int y = 0; y != height; ++y)
-					{
-						for (int x = 0; x != width; ++x)
-						{
-							ray.direction = Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
-							ray.direction = camera->matrix.Transform(ray.direction);
-
-							// generate shared random vector
-							Num randomVal = RandomUtil::NextValue(x / widthRange, y / heightRange);
-							auto randomVec = Vec3(randomVal, randomVal, randomVal) - .5f;
-
-							// trace
-							int maxBounce = maxBounceCount;
-							auto light = Color();
-							Trace(ray, light, maxBounce, randomVec);
-
-							// write result
-							colors[x + (y * width)] = light;
-						}
-					}
-				}
+				for (; i < workerCount; ++i) threads.emplace_back(RenderThread, i, workerCount);
 			}
-			else
+			catch (const std::system_error&)
 			{
-				// render frames
-				for (int f = 0; f != frames; ++f)
-				{
-					std::cout << "Frame:" << f << " rendering" << std::endl;
-					UpdateMovieObjects(f);
-					auto frame = movie->frames[f];
-
-					// tell threads to start processing task
-					for (int i = 0; i != threadCount; ++i)
-					{
-						auto data = threadDatas[i];
-						data->image = frame;
-						data->done = false;
-						data->waiting = false;
-					}
-
-					// wait for all threads to finish
-					for (int i = 0; i != threadCount; ++i)
-					{
-						auto data = threadDatas[i];
-						while (!data->done) Sleep(1);
-					}
-				}
+				// The calling thread renders any ranges whose worker could not start.
 			}
+			for (; i < workerCount; ++i) RenderThread(i, workerCount);
+			RenderThread(0, workerCount);
+			for (auto& thread : threads) thread.join();
 
-			return movie;
+			return movie.get();
 		}
 
-		static void UpdateMovieObjects(int frame)
+		static void UpdateMovieObjects(Camera& camera, PointLight* pointLights, int frame)
 		{
 			Num rot = frame * .1f;
 			for (int l = 0; l != pointLightsLength; ++l)
 			{
-				auto pointLight = pointLights[l];
-				Num r = rot * pointLight->rotSpeed;
-				pointLight->position = pointLight->rotPos + (Vec3(MATH::Cos(r), MATH::Sin(r) * 4, MATH::Sin(r) * 3) * .1f);
-				pointLight->color = Color(MATH::Abs(MATH::Cos(r)) * 10, MATH::Abs(MATH::Sin(r)) * 10, MATH::Abs(MATH::Cos(r * .33f) * 10));
+				auto& pointLight = pointLights[l];
+				Num r = rot * pointLight.rotSpeed;
+				pointLight.position = pointLight.rotPos + (Vec3(MATH::Cos(r), MATH::Sin(r) * 4, MATH::Sin(r) * 3) * .1f);
+				pointLight.color = Color(MATH::Abs(MATH::Cos(r)) * 10, MATH::Abs(MATH::Sin(r)) * 10, MATH::Abs(MATH::Cos(r * .33f) * 10));
 			}
 
 			Num c = -rot * .25f;
 			auto center = Vec3(0, 0, -2);
-			camera->position = center + Vec3(MATH::Sin(c), MATH::Sin(c) * .1f, -MATH::Cos(c)) * 2;
-			camera->forward = (center - camera->position).Normalize();
-			camera->Update();
+			camera.position = center + Vec3(MATH::Sin(c), MATH::Sin(c) * .1f, -MATH::Cos(c)) * 2;
+			camera.forward = (center - camera.position).Normalize();
+			camera.Update();
 		}
 
-		static void RenderThread(void* dataObj)
+		static void RenderThread(int index, int step)
 		{
-			auto data = (RenderThreadData*)dataObj;
-
-			while (!data->exit)
+			Camera camera(Vec3(0, 0, 0), Vec3(0, 0, -1), Vec3(0, 1, 0));
+			PointLight pointLights[pointLightsLength] =
 			{
-				// wait for main thread to trigger
-				while (data->waiting) Sleep(1);
-				if (data->done) return;
+				PointLight(Vec3(.1f, .75f, -2), .01f, Color(1, 1, 1) * 10, 1)
+			};
+			Num widthRange = (Num)(width - 1);
+			Num heightRange = (Num)(height - 1);
 
-				// setup ray
+			for (int f = index; f < frames; f += step)
+			{
+				std::printf("Frame:%d rendering\n", f);
+				std::fflush(stdout);
+				UpdateMovieObjects(camera, pointLights, f);
+
+				// each frame has its own random sequence regardless of which thread renders it
+				RandomUtil random(f);
 				Ray ray;
-				ray.origin = camera->position;
-
-				// render image section
-				auto colors = data->image->colors;
-				Num widthRange = width - 1;
-				Num heightRange = height - 1;
-				for (int y = data->y; y < data->yEnd; ++y)
+				ray.origin = camera.position;
+				auto colors = movie->frames[f].colors.data();
+				for (int y = 0; y < height; ++y)
 				{
-					for (int x = data->x; x < data->xEnd; ++x)
+					Num v = y / heightRange;
+					for (int x = 0; x < width; ++x)
 					{
-						ray.direction = Vec3((x / (Num)(width - 1)) - .5f, (y / (Num)(height - 1)) - .5f, -1).Normalize();
-						ray.direction = camera->matrix.Transform(ray.direction);
+						Num u = x / widthRange;
+						ray.direction = Vec3(u - .5f, v - .5f, -1).Normalize();
+						ray.direction = camera.matrix.Transform(ray.direction);
 
-						// generate shared random vector
-						Num randomVal = RandomUtil::NextValue(x / widthRange, y / heightRange);
-						auto randomVec = Vec3(randomVal, randomVal, randomVal) - .5f;
+						// generate random vector
+						Num randomVal = random.NextValue(u, v) - .5f;
+						auto randomVec = Vec3(randomVal, randomVal, randomVal);
 
 						// trace
 						int maxBounce = maxBounceCount;
 						auto light = Color();
-						Trace(ray, light, maxBounce, randomVec);
+						Trace(ray, light, maxBounce, randomVec, pointLights);
 
 						// write result
-						colors[x + (y * width)] = light;
+						*colors++ = light;
 					}
 				}
-
-				// tell main thread we're done
-				data->done = true;
-				data->waiting = true;
 			}
 		}
 
-		static bool Trace(Ray& ray, Color& light, int& maxBounce, const Vec3& randomVec)
+		static Num LightFalloff(Num lightDis)
+		{
+			Num value = lightDis + 1;
+			Num squared = value * value;
+			return squared * squared;
+		}
+
+		#if !DISABLE_FOG
+		static void GatherFog(const Ray& ray, Color& light, const Vec3& randomVec, int steps, const PointLight* pointLights)
+		{
+			auto fogStep = ray.direction * volumeFogStep;
+			for (int l = 0; l != pointLightsLength; ++l)
+			{
+				auto fogPos = ray.origin;
+				Num fogBrightness = 0;
+				const auto& pointLight = pointLights[l];
+				auto lightPosition = pointLight.position + (randomVec * pointLight.radius);
+				for (int i = 0; i != steps; ++i)
+				{
+					fogPos += fogStep;
+					Num lightDis;
+					if (!IsInShadow(lightPosition, fogPos, lightDis)) fogBrightness += 1 / LightFalloff(lightDis);
+				}
+				light += pointLight.color * fogBrightness * volumeFogStep * .1f;
+			}
+		}
+		#endif
+
+		static bool Trace(const Ray& ray, Color& light, int& maxBounce, const Vec3& randomVec, const PointLight* pointLights)
 		{
 			// find closes object
-			Obj* closestObject = nullptr;
-			Num closestDis = Math::MaxValue();
+			const Obj* closestObject = nullptr;
+			Num closestDis = MATH::MaxValue();
 			auto closestInfo = HitInfo();
 			for (int o = 0; o != objectsLength; ++o)
 			{
@@ -772,23 +754,11 @@ namespace SimpleRayBench
 			// hit point light orb
 			for (int l = 0; l != pointLightsLength; ++l)
 			{
-				auto pointLight = pointLights[l];
-				PointLight* closestLight = NULL;
+				const auto& pointLight = pointLights[l];
 				HitInfo info;
-				if (ray.HitSphere(pointLight->position, pointLight->radius, info))
+				if (ray.HitSphere(pointLight.position, pointLight.radius, info) && (ray.origin - info.point).Length() < closestDis)
 				{
-					Num dis = (ray.origin - info.point).Length();
-					if (dis < closestDis)
-					{
-						closestDis = dis;
-						closestLight = pointLight;
-						closestInfo = info;
-					}
-				}
-
-				if (closestLight != NULL)
-				{
-					light = closestLight->color;
+					light = pointLight.color;
 					return true;
 				}
 			}
@@ -811,12 +781,12 @@ namespace SimpleRayBench
 				reflectedRay.origin = closestInfo.point - (reflectedRay.direction * .0001f);// move a little off surface to correct for floating point errors
 
 				// gather surface light
-				GatherLight(closestObject, reflectedClosestInfo, light, randomVec);
+				GatherLight(closestObject, reflectedClosestInfo, light, randomVec, pointLights);
 
 				// trace from this reflected path
 				maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 				auto reflectedLight = Color();
-				Trace(reflectedRay, reflectedLight, maxBounce, randomVec);
+				Trace(reflectedRay, reflectedLight, maxBounce, randomVec, pointLights);
 
 				// material (reflection)
 				Num fresnel = 1 - Vec3::FresnelSchlickZero(ray.direction, closestInfo.normal);
@@ -824,22 +794,8 @@ namespace SimpleRayBench
 
 				// volume fog tracing taking into account shadows
 				#if !DISABLE_FOG
-				auto fogPos = ray.origin;
-				auto fogStep = ray.direction * volumeFogStep;
 				int maxVolumeFogStepsClamped = (int)MATH::Min(closestDis / volumeFogStep, maxVolumeFogSteps);
-				for (int l = 0; l != pointLightsLength; ++l)
-				{
-					Num fogBrightness = 0;
-					auto pointLight = pointLights[l];
-					for (int i = 0; i != maxVolumeFogStepsClamped; ++i)
-					{
-						fogPos += fogStep;
-						Num lightDis;
-						Ray lightRay;
-						if (!IsInShadow(pointLight, fogPos, randomVec, lightDis, lightRay)) fogBrightness += 1 / MATH::Pow(lightDis + 1, 4);
-					}
-					light += pointLight->color * fogBrightness * volumeFogStep * .1f;
-				}
+				GatherFog(ray, light, randomVec, maxVolumeFogStepsClamped, pointLights);
 				#endif
 				
 				return true;
@@ -848,21 +804,7 @@ namespace SimpleRayBench
 			{
 				// volume fog tracing taking into account shadows (optimized for when nothing is hit)
 				#if !DISABLE_FOG
-				auto fogPos = ray.origin;
-				auto fogStep = ray.direction * volumeFogStep;
-				for (int l = 0; l != pointLightsLength; ++l)
-				{
-					Num fogBrightness = 0;
-					auto pointLight = pointLights[l];
-					for (int i = 0; i != maxVolumeFogSteps; ++i)
-					{
-						fogPos += fogStep;
-						Num lightDis;
-						Ray lightRay;
-						if (!IsInShadow(pointLight, fogPos, randomVec, lightDis, lightRay)) fogBrightness += 1 / MATH::Pow(lightDis + 1, 4);
-					}
-					light += pointLight->color * fogBrightness * volumeFogStep * .1f;
-				}
+				GatherFog(ray, light, randomVec, maxVolumeFogSteps, pointLights);
 				#endif
 			}
 
@@ -870,7 +812,7 @@ namespace SimpleRayBench
 			return false;
 		}
 
-		static void GatherLight(Obj* obj, const HitInfo& info, Color& light, const Vec3& randomVec)
+		static void GatherLight(const Obj* obj, const HitInfo& info, Color& light, const Vec3& randomVec, const PointLight* pointLights)
 		{
 			auto objColor = obj->material.color;
 
@@ -880,56 +822,45 @@ namespace SimpleRayBench
 			// point
 			for (int l = 0; l != pointLightsLength; ++l)
 			{
-				auto pointLight = pointLights[l];
+				const auto& pointLight = pointLights[l];
 
 				// diffuse
+				auto lightPosition = pointLight.position + (randomVec * pointLight.radius);
 				Num lightDis;
-				Ray lightRay;
-				if (!IsInShadow(pointLights[l], info.point, randomVec, lightDis, lightRay))
+				Vec3 lightDirection;
+				if (!IsInShadow(lightPosition, info.point, lightDis, &lightDirection))
 				{
-					Num d = MATH::Max(info.normal.Dot(lightRay.direction), 0);
-					d /= MATH::Pow(lightDis + 1, 4);
-					light += objColor * pointLight->color * d;
+					Num d = MATH::Max(info.normal.Dot(lightDirection), 0);
+					d /= LightFalloff(lightDis);
+					light += objColor * pointLight.color * d;
 				}
 			}
 		}
 
-		static bool IsInShadow(PointLight* pointLight, const Vec3& point, const Vec3& randomVec, Num& lightDis, Ray& lightRay)
+		static bool IsInShadow(const Vec3& lightPosition, const Vec3& point, Num& lightDis, Vec3* lightDirection = nullptr)
 		{
-			auto softVec = (pointLight->position + (randomVec * pointLight->radius)) - point;
-			lightDis = softVec.Length();
-			lightRay = Ray(point, softVec.Normalize());
+			// A ray parameter of 1 is the light position.
+			Ray lightRay(point, lightPosition - point);
+			Num a = lightRay.direction.Dot();
 			for (int o = 0; o != objectsLength; ++o)
 			{
-				auto obj = objects[o];
-				HitInfo hitInfo;
-				if (obj->Hit(lightRay, hitInfo) && (hitInfo.point - point).Length() <= lightDis)
-				{
-					return true;
-				}
+				if (objects[o]->BlocksLight(lightRay, a)) return true;
 			}
+
+			lightDis = MATH::Sqrt(a);
+			if (lightDirection != nullptr) *lightDirection = lightRay.direction / lightDis;
 			return false;
 		}
 	};
 
 	Color Benchmark::fogColor = Color(.25f, .25f, .25f);
 
-	thread_local float RandomUtil::offsetX;
-	thread_local float RandomUtil::offsetY;
-
 	int Benchmark::width;
 	int Benchmark::height;
 	int Benchmark::frames;
-	RawMovie* Benchmark::movie;
-	Camera* Benchmark::camera;
-	int Benchmark::objectsLength;
-	Obj** Benchmark::objects;
+	std::unique_ptr<RawMovie> Benchmark::movie;
+	const Obj* Benchmark::objects[objectsLength];
 	Color Benchmark::ambientLight;
-	int Benchmark::pointLightsLength;
-	PointLight** Benchmark::pointLights;
 
 	int Benchmark::threadCount;
-	RenderThreadData** Benchmark::threadDatas;
-	std::thread** Benchmark::threads;
-	bool Benchmark::threadsAlive;
 }

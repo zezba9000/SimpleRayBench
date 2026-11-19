@@ -1,39 +1,42 @@
 //#![forbid(unsafe_code)]
 #![allow(dead_code, non_upper_case_globals)]
 
-use std::cell::Cell;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::thread;
 
 // Change to f64 for NUM64
 pub type Num = f32;
 pub const DISABLE_FOG: bool = false;
 
-pub struct RandomUtil;
-
-thread_local!
+pub struct RandomUtil
 {
-    static OFFSET: Cell<(Num, Num)> = const { Cell::new((0.0, 0.0)) };
+    offset_x: Num,
+    offset_y: Num,
 }
 
 impl RandomUtil
 {
     #[inline(always)]
-    pub fn next_value(mut u: Num, mut v: Num) -> Num
+    pub fn for_frame(frame: i32) -> Self
+    {
+        Self {
+            offset_x: frame as Num * 0.5,
+            offset_y: frame as Num * 0.75,
+        }
+    }
+
+    #[inline(always)]
+    pub fn next_value(&mut self, mut u: Num, mut v: Num) -> Num
     {
         const randoValueX: Num = 12.9898;
         const randoValueY: Num = 78.233;
         const randoValueZ: Num = 43758.543123;
 
-        OFFSET.with(|offset| {
-            let (ox, oy) = offset.get();
-            u += ox;
-            v += oy;
-            offset.set((ox + 0.5, oy + 0.75));
-        });
+        u += self.offset_x;
+        v += self.offset_y;
+        self.offset_x += 0.5;
+        self.offset_y += 0.75;
 
         let mut result = (u * randoValueX) + (v * randoValueY);
         result = result.sin() * randoValueZ;
@@ -406,35 +409,30 @@ impl Ray
     }
 
     #[inline(always)]
-    pub fn hit_sphere(&self, sphere_center: Vec3, sphere_radius: Num, info: &mut HitInfo) -> bool
+    fn hit_sphere_numerator(&self, sphere_center: Vec3, radius_squared: Num, a: Num) -> Option<Num>
     {
-        // if ray pointing wrong direction ignore
-        if self.direction.dot(self.origin - sphere_center) >= 0.0
-        {
-            *info = HitInfo::default();
-            return false;
-        }
-
-        // compute
         let d = self.origin - sphere_center;
-        let a = self.direction.dot(self.direction);
         let b = d.dot(self.direction);
-        let c = d.dot_self() - sphere_radius * sphere_radius;
+        if b >= 0.0 { return None; }
 
-        // if ray not pointing at object ignore
+        let c = d.dot_self() - radius_squared;
         let disc = b * b - a * c;
-        if disc < 0.0
+        if disc < 0.0 { return None; }
+
+        Some(-b - disc.sqrt())
+    }
+
+    #[inline(always)]
+    pub fn hit_sphere(&self, sphere_center: Vec3, radius_squared: Num, a: Num, info: &mut HitInfo) -> bool
+    {
+        let Some(numerator) = self.hit_sphere_numerator(sphere_center, radius_squared, a) else
         {
             *info = HitInfo::default();
             return false;
-        }
+        };
 
-        // compute
-        let sqrt_disc = disc.sqrt();
-        let inv_a = 1.0 / a;
-        let t1 = (-b - sqrt_disc) * inv_a;
-
-        info.point = self.origin + t1 * self.direction;
+        let t = numerator * (1.0 / a);
+        info.point = self.origin + t * self.direction;
         info.normal = (info.point - sphere_center).normalize();
 
         true
@@ -499,12 +497,27 @@ impl Obj
     }
 
     #[inline(always)]
-    pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool
+    pub fn hit(&self, ray: &Ray, a: Num, info: &mut HitInfo) -> bool
     {
         match &self.obj_type
         {
-            ObjType::Sphere(sphere) => sphere.hit(ray, info),
+            ObjType::Sphere(sphere) => sphere.hit(ray, a, info),
             ObjType::Plane(plane) => plane.hit(ray, info),
+        }
+    }
+
+    #[inline(always)]
+    fn blocks_light(&self, ray: &Ray, a: Num) -> bool
+    {
+        match &self.obj_type
+        {
+            ObjType::Sphere(sphere) =>
+            {
+                // The hit parameter is numerator / a.
+                matches!(ray.hit_sphere_numerator(sphere.center, sphere.radius_squared, a),
+                    Some(numerator) if numerator.abs() <= a)
+            }
+            ObjType::Plane(plane) => plane.blocks_light(ray, a),
         }
     }
 }
@@ -513,7 +526,7 @@ impl Obj
 pub struct Sphere
 {
     pub center: Vec3,
-    pub radius: Num,
+    radius_squared: Num,
 }
 
 impl Sphere
@@ -521,13 +534,13 @@ impl Sphere
     #[inline(always)]
     pub fn new(center: Vec3, radius: Num) -> Self
     {
-        Self { center, radius }
+        Self { center, radius_squared: radius * radius }
     }
 
     #[inline(always)]
-    pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool
+    pub fn hit(&self, ray: &Ray, a: Num, info: &mut HitInfo) -> bool
     {
-        ray.hit_sphere(self.center, self.radius, info)
+        ray.hit_sphere(self.center, self.radius_squared, a, info)
     }
 }
 
@@ -540,6 +553,8 @@ pub struct Plane
 
 impl Plane
 {
+    const PARALLEL_THRESHOLD: Num = 0.0001;
+
     #[inline(always)]
     pub fn new(center: Vec3, normal: Vec3) -> Self
     {
@@ -551,15 +566,8 @@ impl Plane
 
     #[inline(always)]
     pub fn hit(&self, ray: &Ray, info: &mut HitInfo) -> bool {
-        // if ray pointing wrong direction ignore
-        if ray.direction.dot(self.normal) >= 0.0
-        {
-            *info = HitInfo::default();
-            return false;
-        }
-
         let denom = self.normal.dot(ray.direction);
-        if denom.abs() > 0.0001
+        if denom < -Self::PARALLEL_THRESHOLD
         {
             let t = (self.center - ray.origin).dot(self.normal) / denom;
             if t >= 0.0
@@ -572,6 +580,19 @@ impl Plane
 
         *info = HitInfo::default();
         false
+    }
+
+    #[inline(always)]
+    fn blocks_light(&self, ray: &Ray, a: Num) -> bool
+    {
+        let denom = self.normal.dot(ray.direction);
+        if denom >= 0.0 || denom * denom <= a * (Self::PARALLEL_THRESHOLD * Self::PARALLEL_THRESHOLD)
+        {
+            return false;
+        }
+
+        let offset = (self.center - ray.origin).dot(self.normal);
+        offset <= 0.0 && offset >= denom
     }
 }
 
@@ -622,6 +643,7 @@ impl RawMovie
     }
 }
 
+#[derive(Clone)]
 pub struct Camera
 {
     pub position: Vec3,
@@ -654,6 +676,7 @@ impl Camera
     }
 }
 
+#[derive(Clone)]
 pub struct PointLight
 {
     pub position: Vec3,
@@ -677,24 +700,9 @@ impl PointLight
     }
 }
 
-pub struct RenderThreadData
-{
-    pub index: i32,
-    pub random_index: i32,
-    pub waiting: AtomicBool,
-    pub done: AtomicBool,
-    pub exit: AtomicBool,
-    pub x: i32,
-    pub y: i32,
-    pub x_end: i32,
-    pub y_end: i32,
-    pub buffer: Mutex<Vec<Color>>,
-}
-
+#[derive(Clone)]
 pub struct Scene
 {
-    pub width: i32,
-    pub height: i32,
     pub camera: Camera,
     pub objects: Vec<Obj>,
     pub ambient_light: Color,
@@ -733,17 +741,49 @@ impl Scene
         self.camera.update();
     }
 
-    pub fn trace(&self, ray: &Ray, light: &mut Color, max_bounce: &mut i32, random_vec: &Vec3) -> bool
+    fn render_frame(&mut self, frame: i32, image: &mut RawImage)
+    {
+        println!("Frame:{} rendering", frame);
+        self.update_movie_objects(frame);
+
+        if image.width <= 0 || image.height <= 0 { return; }
+
+        let width_range = (image.width - 1) as Num;
+        let height_range = (image.height - 1) as Num;
+        let mut ray = Ray::new(self.camera.position, Vec3::default());
+        let mut random = RandomUtil::for_frame(frame);
+
+        for (y, row) in image.colors.chunks_exact_mut(image.width as usize).enumerate()
+        {
+            let v = y as Num / height_range;
+            for (x, pixel) in row.iter_mut().enumerate()
+            {
+                let u = x as Num / width_range;
+                ray.direction = Vec3::new(u - 0.5, v - 0.5, -1.0).normalize();
+                ray.direction = self.camera.matrix.transform(ray.direction);
+
+                let random_val = random.next_value(u, v) - 0.5;
+                let random_vec = Vec3::new(random_val, random_val, random_val);
+
+                let mut light = Color::default();
+                self.trace(&ray, &mut light, maxBounceCount, &random_vec);
+                *pixel = light;
+            }
+        }
+    }
+
+    fn trace(&self, ray: &Ray, light: &mut Color, max_bounce: i32, random_vec: &Vec3)
     {
         // find closest object
-        let mut closest_object: Option<&Obj> = None;
+        let mut closest_object = None;
         let mut closest_dis = Num::MAX;
         let mut closest_info = HitInfo::default();
-        
+        let a = ray.direction.dot_self();
+
         for obj in &self.objects
         {
             let mut info = HitInfo::default();
-            if obj.hit(ray, &mut info)
+            if obj.hit(ray, a, &mut info)
             {
                 let dis = (ray.origin - info.point).length();
                 if dis < closest_dis
@@ -758,35 +798,24 @@ impl Scene
         // hit point light orb
         for point_light in &self.point_lights
         {
-            let mut closest_light: Option<&PointLight> = None;
-            let mut info = HitInfo::default();
-            if ray.hit_sphere(point_light.position, point_light.radius, &mut info)
+            let radius_squared = point_light.radius * point_light.radius;
+            if let Some(numerator) = ray.hit_sphere_numerator(point_light.position, radius_squared, a)
             {
-                let dis = (ray.origin - info.point).length();
-                if dis < closest_dis
+                let t = numerator * (1.0 / a);
+                let point = ray.origin + t * ray.direction;
+                if (ray.origin - point).length() < closest_dis
                 {
-                    closest_dis = dis;
-                    closest_light = Some(point_light);
-                    closest_info = info;
+                    *light = point_light.color;
+                    return;
                 }
-            }
-
-            if let Some(cl) = closest_light
-            {
-                *light = cl.color;
-                return true;
             }
         }
 
         // process lighting
         if let Some(closest_obj) = closest_object
         {
-            if *max_bounce <= 0 { return false; }
-            
-            *max_bounce -= 1;
-            let max_bounce_reset = *max_bounce;
+            if max_bounce <= 0 { return; }
 
-            // buffer diffuse pass state objects
             let mut reflected_closest_info = closest_info;
             let mut reflected_ray = *ray;
             let material = &closest_obj.material;
@@ -799,18 +828,11 @@ impl Scene
                 .reflect(reflected_closest_info.normal.normalize());
             reflected_ray.origin = closest_info.point - (reflected_ray.direction * 0.0001); // move a little off surface to correct for floating point errors
 
-            // gather surface light
             self.gather_light(closest_obj, &reflected_closest_info, light, random_vec);
 
             // trace from this reflected path
-            *max_bounce = max_bounce_reset; // reset max bounce here or we lose light average consistancy
             let mut reflected_light = Color::default();
-            self.trace(
-                &reflected_ray,
-                &mut reflected_light,
-                max_bounce,
-                random_vec,
-            );
+            self.trace(&reflected_ray, &mut reflected_light, max_bounce - 1, random_vec);
 
             // material (reflection)
             let fresnel = 1.0 - Vec3::fresnel_schlick_zero(ray.direction, closest_info.normal);
@@ -819,77 +841,47 @@ impl Scene
                 reflected_light * material.color,
                 material.metalic * fresnel,
             ) * material.reflectiveness;
-
-            // volume fog tracing taking into account shadows
-            if !DISABLE_FOG
-            {
-                let mut fog_pos = ray.origin;
-                let fog_step = ray.direction * volumeFogStep;
-                let max_volume_fog_steps_clamped =
-                    (closest_dis / volumeFogStep).min(maxVolumeFogSteps as Num) as i32;
-                
-                for point_light in &self.point_lights
-                {
-                    let mut fog_brightness: Num = 0.0;
-                    
-                    for _ in 0..max_volume_fog_steps_clamped
-                    {
-                        fog_pos += fog_step;
-                        let mut light_dis: Num = 0.0;
-                        let mut light_ray = Ray::default();
-                        if !self.is_in_shadow(
-                            point_light,
-                            fog_pos,
-                            *random_vec,
-                            &mut light_dis,
-                            &mut light_ray,
-                        ) {
-                            fog_brightness += 1.0 / (light_dis + 1.0).powi(4);
-                        }
-                    }
-                    *light += point_light.color * fog_brightness * volumeFogStep * 0.1;
-                }
-            }
-
-            return true;
         }
-        else
+
+        // volume fog tracing taking into account shadows
+        if !DISABLE_FOG
         {
-            // volume fog tracing taking into account shadows (optimized for when nothing is hit)
-            if !DISABLE_FOG
+            let steps = if closest_object.is_some()
             {
-                let mut fog_pos = ray.origin;
-                let fog_step = ray.direction * volumeFogStep;
-                
-                for point_light in &self.point_lights
+                (closest_dis / volumeFogStep).min(maxVolumeFogSteps as Num) as i32
+            }
+            else
+            {
+                maxVolumeFogSteps
+            };
+            self.gather_fog(ray, light, random_vec, steps);
+        }
+    }
+
+    fn gather_fog(&self, ray: &Ray, light: &mut Color, random_vec: &Vec3, steps: i32)
+    {
+        let mut fog_pos = ray.origin;
+        let fog_step = ray.direction * volumeFogStep;
+        for point_light in &self.point_lights
+        {
+            let mut fog_brightness: Num = 0.0;
+            let light_position = point_light.position + (*random_vec * point_light.radius);
+            for _ in 0..steps
+            {
+                fog_pos += fog_step;
+                let light_ray = Ray::new(fog_pos, light_position - fog_pos);
+                let distance_squared = light_ray.direction.dot_self();
+                if !self.is_in_shadow(&light_ray, distance_squared)
                 {
-                    let mut fog_brightness: Num = 0.0;
-                    for _ in 0..maxVolumeFogSteps
-                    {
-                        fog_pos += fog_step;
-                        let mut light_dis: Num = 0.0;
-                        let mut light_ray = Ray::default();
-                        if !self.is_in_shadow(
-                            point_light,
-                            fog_pos,
-                            *random_vec,
-                            &mut light_dis,
-                            &mut light_ray,
-                        ) {
-                            fog_brightness += 1.0 / (light_dis + 1.0).powi(4);
-                        }
-                    }
-                    *light += point_light.color * fog_brightness * volumeFogStep * 0.1;
+                    fog_brightness += 1.0 / (distance_squared.sqrt() + 1.0).powi(4);
                 }
             }
+            *light += point_light.color * fog_brightness * volumeFogStep * 0.1;
         }
-
-        // hit nothing
-        false
     }
 
     #[inline(always)]
-    pub fn gather_light(&self, obj: &Obj, info: &HitInfo, light: &mut Color, random_vec: &Vec3)
+    fn gather_light(&self, obj: &Obj, info: &HitInfo, light: &mut Color, random_vec: &Vec3)
     {
         let obj_color = obj.material.color;
 
@@ -899,17 +891,13 @@ impl Scene
         // point
         for point_light in &self.point_lights
         {
-            // diffuse
-            let mut light_dis: Num = 0.0;
-            let mut light_ray = Ray::default();
-            if !self.is_in_shadow(
-                point_light,
-                info.point,
-                *random_vec,
-                &mut light_dis,
-                &mut light_ray,
-            ) {
-                let mut d = info.normal.dot(light_ray.direction).max(0.0);
+            let light_position = point_light.position + (*random_vec * point_light.radius);
+            let light_ray = Ray::new(info.point, light_position - info.point);
+            let distance_squared = light_ray.direction.dot_self();
+            if !self.is_in_shadow(&light_ray, distance_squared)
+            {
+                let light_dis = distance_squared.sqrt();
+                let mut d = info.normal.dot(light_ray.direction / light_dis).max(0.0);
                 d /= (light_dis + 1.0).powi(4);
                 *light += obj_color * point_light.color * d;
             }
@@ -917,41 +905,18 @@ impl Scene
     }
 
     #[inline(always)]
-    pub fn is_in_shadow(
-        &self,
-        point_light: &PointLight,
-        point: Vec3,
-        random_vec: Vec3,
-        light_dis: &mut Num,
-        light_ray: &mut Ray,
-    ) -> bool {
-        let soft_vec = (point_light.position + (random_vec * point_light.radius)) - point;
-        *light_dis = soft_vec.length();
-        *light_ray = Ray::new(point, soft_vec.normalize());
-        
-        for obj in &self.objects
-        {
-            let mut hit_info = HitInfo::default();
-            if obj.hit(light_ray, &mut hit_info) && (hit_info.point - point).length() <= *light_dis
-            {
-                return true;
-            }
-        }
-        false
+    fn is_in_shadow(&self, ray: &Ray, distance_squared: Num) -> bool
+    {
+        // A ray parameter of 1 is the light position.
+        self.objects.iter().any(|obj| obj.blocks_light(ray, distance_squared))
     }
 }
 
 pub struct Benchmark
 {
-    pub width: i32,
-    pub height: i32,
-    pub frames: i32,
     pub movie: RawMovie,
-    pub scene: Arc<RwLock<Scene>>,
-    pub thread_count: i32,
-    pub thread_datas: Vec<Arc<RenderThreadData>>,
-    pub threads: Vec<JoinHandle<()>>,
-    pub threads_alive: bool,
+    pub scene: Scene,
+    pub thread_count: usize,
 }
 
 impl Benchmark
@@ -1003,237 +968,49 @@ impl Benchmark
             1.0,
         )];
 
-        let scene = Arc::new(RwLock::new(Scene {
-            width,
-            height,
+        let scene = Scene {
             camera,
             objects,
             ambient_light,
             point_lights,
             fog_color: Color::new(0.25, 0.25, 0.25),
-        }));
+        };
 
-        // start threads
         let thread_count = thread::available_parallelism()
-            .map(|n| n.get() as i32)
-            .unwrap_or(1);
-        
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(frames as usize);
         println!("Thread Count: {}", thread_count);
-        
-        let mut thread_datas = Vec::with_capacity(thread_count as usize);
-        let mut threads = Vec::with_capacity(thread_count as usize);
 
-        let section_height = height / thread_count;
-        
-        for i in 0..thread_count
-        {
-            let y_start = i * section_height;
-            let mut y_end = y_start + section_height;
-            if i == thread_count - 1 { y_end = height; }
-            
-            let strip_len = ((y_end - y_start) * width) as usize;
-            let data = Arc::new(RenderThreadData {
-                index: i,
-                random_index: i % thread_count,
-                exit: AtomicBool::new(false),
-                waiting: AtomicBool::new(true),
-                done: AtomicBool::new(false),
-                x: 0,
-                y: y_start,
-                x_end: width,
-                y_end,
-                buffer: Mutex::new(vec![Color::default(); strip_len]),
-            });
-            
-            let data_clone = Arc::clone(&data);
-            let scene_clone = Arc::clone(&scene);
-            
-            thread_datas.push(data);
-            threads.push(thread::spawn(move || {
-                Self::render_thread(data_clone, scene_clone);
-            }));
-        }
-
-        Self {
-            width,
-            height,
-            frames,
-            movie,
-            scene,
-            thread_count,
-            thread_datas,
-            threads,
-            threads_alive: true,
-        }
-    }
-
-    pub fn dispose(&mut self)
-    {
-        if !self.threads_alive { return; }
-        
-        for data in &self.thread_datas
-        {
-            data.exit.store(true, Ordering::Release);
-            data.done.store(true, Ordering::Release);
-            data.waiting.store(false, Ordering::Release);
-        }
-        
-        for handle in self.threads.drain(..)
-        {
-            let _ = handle.join();
-        }
-        
-        self.threads_alive = false;
+        Self { movie, scene, thread_count }
     }
 
     pub fn render(&mut self, single_threaded: bool) -> &RawMovie
     {
-        if single_threaded
+        let worker_count = if single_threaded { 1 } else { self.thread_count };
+        let initial_scene = &self.scene;
+        let frames = Mutex::new(self.movie.frames.iter_mut().enumerate());
+
+        let render_frames = ||
         {
-            let width_range = (self.width - 1) as Num;
-            let height_range = (self.height - 1) as Num;
-            
-            for f in 0..self.frames
+            let mut scene = initial_scene.clone();
+            loop
             {
-                println!("Frame:{} rendering", f);
-                {
-                    let mut scene = self.scene.write().unwrap();
-                    scene.update_movie_objects(f);
-                }
-                let scene = self.scene.read().unwrap();
-
-                let mut ray = Ray::default();
-                ray.origin = scene.camera.position;
-
-                let colors = &mut self.movie.frames[f as usize].colors;
-                
-                for y in 0..self.height
-                {
-                    for x in 0..self.width
-                    {
-                        ray.direction = Vec3::new(
-                            (x as Num / width_range) - 0.5,
-                            (y as Num / height_range) - 0.5,
-                            -1.0,
-                        ).normalize();
-                        
-                        ray.direction = scene.camera.matrix.transform(ray.direction);
-
-                        // generate shared random vector
-                        let random_val = RandomUtil::next_value(x as Num / width_range, y as Num / height_range);
-                        let random_vec = Vec3::new(random_val, random_val, random_val) - 0.5;
-
-                        // trace
-                        let mut max_bounce = maxBounceCount;
-                        let mut light = Color::default();
-                        scene.trace(&ray, &mut light, &mut max_bounce, &random_vec);
-
-                        // write result
-                        colors[(x + (y * self.width)) as usize] = light;
-                    }
-                }
+                // Each worker takes ownership of a frame and fills its pixels in place.
+                let next = frames.lock().unwrap().next();
+                let Some((index, image)) = next else { break; };
+                scene.render_frame(index as i32, image);
             }
-        }
-        else
-        {
-            // render frames
-            for f in 0..self.frames
+        };
+
+        thread::scope(|scope| {
+            for _ in 1..worker_count
             {
-                println!("Frame:{} rendering", f);
-                {
-                    let mut scene = self.scene.write().unwrap();
-                    scene.update_movie_objects(f);
-                }
-
-                // tell threads to start processing task
-                for data in &self.thread_datas
-                {
-                    data.done.store(false, Ordering::Release);
-                    data.waiting.store(false, Ordering::Release);
-                }
-
-                // wait for all threads to finish and copy their strips into the frame
-                let colors = &mut self.movie.frames[f as usize].colors;
-                for data in &self.thread_datas
-                {
-                    while !data.done.load(Ordering::Acquire)
-                    {
-                        thread::sleep(Duration::from_millis(1));
-                    }
-                    
-                    let start_idx = (data.y * self.width) as usize;
-                    let end_idx = (data.y_end * self.width) as usize;
-                    let strip = data.buffer.lock().unwrap();
-                    
-                    colors[start_idx..end_idx].copy_from_slice(&strip);
-                }
+                if thread::Builder::new().spawn_scoped(scope, &render_frames).is_err() { break; }
             }
-        }
+            render_frames();
+        });
 
         &self.movie
-    }
-
-    fn render_thread(data: Arc<RenderThreadData>, scene: Arc<RwLock<Scene>>)
-    {
-        while !data.exit.load(Ordering::Acquire)
-        {
-            // wait for main thread to trigger
-            while data.waiting.load(Ordering::Acquire)
-            {
-                thread::sleep(Duration::from_millis(1));
-            }
-            
-            if data.done.load(Ordering::Acquire) || data.exit.load(Ordering::Acquire)
-            {
-                return;
-            }
-
-            {
-                let scene = scene.read().unwrap();
-                let mut strip = data.buffer.lock().unwrap();
-
-                // setup ray
-                let mut ray = Ray::default();
-                ray.origin = scene.camera.position;
-
-                // render image section
-                let width = scene.width;
-                let width_range = (width - 1) as Num;
-                let height_range = (scene.height - 1) as Num;
-                
-                for y in data.y..data.y_end
-                {
-                    let row_offset = ((y - data.y) * width) as usize;
-                    
-                    for x in data.x..data.x_end
-                    {
-                        ray.direction = Vec3::new(
-                            (x as Num / width_range) - 0.5,
-                            (y as Num / height_range) - 0.5,
-                            -1.0,
-                        ).normalize();
-                        
-                        ray.direction = scene.camera.matrix.transform(ray.direction);
-
-                        // generate shared random vector
-                        let random_val =
-                            RandomUtil::next_value(x as Num / width_range, y as Num / height_range);
-                        let random_vec = Vec3::new(random_val, random_val, random_val) - 0.5;
-
-                        // trace
-                        let mut max_bounce = maxBounceCount;
-                        let mut light = Color::default();
-                        scene.trace(&ray, &mut light, &mut max_bounce, &random_vec);
-
-                        // write result
-                        strip[row_offset + x as usize] = light;
-                    }
-                }
-            }
-
-            // tell main thread we're done
-            data.done.store(true, Ordering::Release);
-            data.waiting.store(true, Ordering::Release);
-        }
     }
 }

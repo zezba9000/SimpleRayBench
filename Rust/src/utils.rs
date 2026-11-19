@@ -8,8 +8,14 @@ pub struct Utils;
 
 impl Utils {
     pub fn convert_raw_image_sdr(image: &RawImage) -> Vec<u8> {
+        let mut data = Vec::new();
+        Self::convert_raw_image_sdr_into(image, &mut data);
+        data
+    }
+
+    fn convert_raw_image_sdr_into(image: &RawImage, data: &mut Vec<u8>) {
         let image_data_length = (image.width * image.height * 3) as usize;
-        let mut data = vec![0u8; image_data_length];
+        data.resize(image_data_length, 0);
         let mut i = 0;
         // for (int y = 0; y != image.height; ++y)
         for y in (0..image.height).rev() {
@@ -23,13 +29,11 @@ impl Utils {
                 i += 3;
             }
         }
-        data
     }
 
     pub fn write_frame_ppm<W: Write>(stream: &mut W, width: i32, height: i32, image_data: &[u8]) {
         // PPM P6 binary header
-        let header = format!("P6\n{} {}\n255\n", width, height);
-        stream.write_all(header.as_bytes()).unwrap();
+        write!(stream, "P6\n{} {}\n255\n", width, height).unwrap();
 
         // RGB pixel data
         stream.write_all(image_data).unwrap();
@@ -54,12 +58,13 @@ impl Utils {
         // save to file
         let file = File::create(filename).unwrap();
         let mut stream = BufWriter::new(file);
+        let mut image_data = Vec::new();
 
         for i in 0..movie.frame_count as usize {
             let image = &movie.frames[i];
 
             // convert image to SDR data
-            let image_data = Self::convert_raw_image_sdr(image);
+            Self::convert_raw_image_sdr_into(image, &mut image_data);
 
             // write frame
             Self::write_frame_ppm(&mut stream, image.width, image.height, &image_data);

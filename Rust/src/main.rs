@@ -17,5 +17,4 @@ fn main() {
     println!("Render Time: {}s", sec);
 
     Utils::save_movie_data_ppm("image.ppm", &bench.movie);
-    bench.dispose();
 }

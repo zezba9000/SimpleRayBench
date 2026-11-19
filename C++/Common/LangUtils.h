@@ -1,16 +1,7 @@
 #pragma once
+#include <cfloat>
 #include <cmath>
 #include <thread>
-
-#if defined(WINDOWS) || defined(_WIN32)
-#include <Windows.h>
-#include <cfloat>
-#else
-#include <cfloat>
-#include <limits>
-#include <unistd.h>
-#define Sleep(x) usleep(x * 1000)
-#endif
 
 class Math
 {
