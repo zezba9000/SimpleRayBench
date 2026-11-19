@@ -1,23 +1,42 @@
 #pragma once
-#include <math.h>
-#include <threads.h>
 
-#if defined(WINDOWS)
-#include <Windows.h>
+#if defined(__APPLE__)
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
+#elif !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <float.h>
-#include <stdio.h>
+#include <math.h>
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <threads.h>
+typedef int ThreadResult;
 #else
-#include <cfloat>
-#include <limits>
+#include <pthread.h>
+#include <time.h>
 #include <unistd.h>
-#define Sleep(x) usleep(x * 1000)
+
+typedef int BOOL;
+#define FALSE 0
+#define TRUE 1
+typedef void* ThreadResult;
+
+void Sleep(int milliseconds)
+{
+	struct timespec duration = { milliseconds / 1000, (milliseconds % 1000) * 1000000L };
+	nanosleep(&duration, NULL);
+}
 #endif
 
 #if defined(NUM64)
 // ===================================
 // Math
 // ===================================
-inline
+static inline
 double MATH_Clamp(double value, double min, double max)
 {
 	if (value < min) return min;
@@ -25,55 +44,55 @@ double MATH_Clamp(double value, double min, double max)
 	return value;
 }
 
-inline
+static inline
 double MATH_Sqrt(double value)
 {
 	return sqrt(value);
 }
 
-inline
+static inline
 double MATH_Sin(double value)
 {
 	return sin(value);
 }
 
-inline
+static inline
 double MATH_Cos(double value)
 {
 	return cos(value);
 }
 
-inline
+static inline
 double MATH_Floor(double value)
 {
 	return floor(value);
 }
 
-inline
+static inline
 double MATH_Pow(double value, double x)
 {
 	return pow(value, x);
 }
 
-inline
+static inline
 double MATH_Max(double value, double x)
 {
 	return fmax(value, x);
 }
 
-inline
+static inline
 double MATH_Min(double value, double x)
 {
 	return fmin(value, x);
 }
 
-inline
+static inline
 double MATH_Abs(double value)
 {
 	return fabs(value);
 }
 
-inline
+static inline
 double MATH_MaxValue()
 {
 	return DBL_MAX;
@@ -82,7 +101,7 @@ double MATH_MaxValue()
 // ===================================
 // MathF
 // ===================================
-inline
+static inline
 float MATH_Clamp(float value, float min, float max)
 {
 	if (value < min) return min;
@@ -90,55 +109,55 @@ float MATH_Clamp(float value, float min, float max)
 	return value;
 }
 
-inline
+static inline
 float MATH_Sqrt(float value)
 {
 	return sqrtf(value);
 }
 
-inline
+static inline
 float MATH_Sin(float value)
 {
 	return sinf(value);
 }
 
-inline
+static inline
 float MATH_Cos(float value)
 {
 	return cosf(value);
 }
 
-inline
+static inline
 float MATH_Floor(float value)
 {
 	return floorf(value);
 }
 
-inline
+static inline
 float MATH_Pow(float value, float x)
 {
 	return powf(value, x);
 }
 
-inline
+static inline
 float MATH_Max(float value, float x)
 {
 	return fmaxf(value, x);
 }
 
-inline
+static inline
 float MATH_Min(float value, float x)
 {
 	return fminf(value, x);
 }
 
-inline
+static inline
 float MATH_Abs(float value)
 {
 	return fabsf(value);
 }
 
-inline
+static inline
 float MATH_MaxValue()
 {
 	return FLT_MAX;
@@ -150,7 +169,7 @@ float MATH_MaxValue()
 // ===================================
 int Environment_ProcessorCount()
 {
-#ifdef WINDOWS
+#ifdef _WIN32
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 	return (int)info.dwNumberOfProcessors;

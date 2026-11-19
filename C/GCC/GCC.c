@@ -1,4 +1,4 @@
-#include "../../Common/Benchmark_Main.h"
+#include "../Common/Benchmark_Main.h"
 #include <stdio.h>
 
 int main()

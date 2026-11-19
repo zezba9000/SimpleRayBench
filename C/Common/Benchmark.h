@@ -11,6 +11,8 @@
 #endif
 
 #include "LangUtils.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef struct RandomUtil
 {
@@ -18,7 +20,7 @@ typedef struct RandomUtil
 }RandomUtil;
 RandomUtil _RandomUtil;
 
-inline
+static inline
 Num RandomUtil_NextValue(Num u, Num v)
 {
 	#define randoValueX 12.9898f
@@ -58,43 +60,43 @@ Color Color_Constructor2(Num r, Num g, Num b)
 	return this;
 }
 
-inline
+static inline
 Color Color_Add(Color p1, const Color p2)
 {
 	return Color_Constructor2(p1.r + p2.r, p1.g + p2.g, p1.b + p2.b);
 }
 
-inline
+static inline
 Color Color_Sub(Color p1, const Color p2)
 {
 	return Color_Constructor2(p1.r - p2.r, p1.g - p2.g, p1.b - p2.b);
 }
 
-inline
+static inline
 Color Color_Mul(Color p1, const Color p2)
 {
 	return Color_Constructor2(p1.r * p2.r, p1.g * p2.g, p1.b * p2.b);
 }
 
-inline
+static inline
 Color Color_Mul2(Color this, Num p2)
 {
 	return Color_Constructor2(this.r * p2, this.g * p2, this.b * p2);
 }
 
-inline
+static inline
 Color Color_Div(Color this, const Color p1, Num p2)
 {
 	return Color_Constructor2(p1.r / p2, p1.g / p2, p1.b / p2);
 }
 
-inline
+static inline
 Color Color_Lerp(Color p1, Color p2, Num t)
 {
 	return Color_Add(p1, Color_Mul2(Color_Sub(p2, p1), t));
 }
 
-inline
+static inline
 Color Color_LerpClamp(Color p1, Color p2, Num t)
 {
 	return Color_Add(p1, Color_Mul2(Color_Sub(p2, p1), MATH_Clamp(t, 0, 1)));
@@ -123,97 +125,97 @@ Vec3 Vec3_Constructor2(Num x, Num y, Num z)
 	return this;
 }
 
-inline
+static inline
 Vec3 Vec3_Add(Vec3 this, const Vec3 p2)
 {
 	return Vec3_Constructor2(this.x + p2.x, this.y + p2.y, this.z + p2.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Sub(Vec3 this, const Vec3 p2)
 {
 	return Vec3_Constructor2(this.x - p2.x, this.y - p2.y, this.z - p2.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Sub2(const Vec3 p1, Num p2)
 {
 	return Vec3_Constructor2(p1.x - p2, p1.y - p2, p1.z - p2);
 }
 
-inline
+static inline
 Vec3 Vec3_Neg(Vec3 v)
 {
 	return Vec3_Constructor2(-v.x, -v.y, -v.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Mul(Vec3 p1, const Vec3 p2)
 {
 	return Vec3_Constructor2(p1.x * p2.x, p1.y * p2.y, p1.z * p2.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Mul2(const Vec3 p1, Num p2)
 {
 	return Vec3_Constructor2(p1.x * p2, p1.y * p2, p1.z * p2);
 }
 
-inline
+static inline
 Vec3 Vec3_Mul3(Num p1, const Vec3 p2)
 {
 	return Vec3_Constructor2(p1 * p2.x, p1 * p2.y, p1 * p2.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Div(Vec3 p1, const Vec3 p2)
 {
 	return Vec3_Constructor2(p1.x / p2.x, p1.y / p2.y, p1.z / p2.z);
 }
 
-inline
+static inline
 Vec3 Vec3_Div2(const Vec3 p1, Num p2)
 {
 	return Vec3_Constructor2(p1.x / p2, p1.y / p2, p1.z / p2);
 }
 
-inline
+static inline
 Num Vec3_Dot(Vec3 this)
 {
 	return (this.x * this.x) + (this.y * this.y) + (this.z * this.z);
 }
 
-inline
+static inline
 Num Vec3_Dot2(Vec3 this, Vec3 vec)
 {
 	return (this.x * vec.x) + (this.y * vec.y) + (this.z * vec.z);
 }
 
-inline
+static inline
 Num Vec3_Length(Vec3 this)
 {
 	return MATH_Sqrt((this.x * this.x) + (this.y * this.y) + (this.z * this.z));
 }
 
-inline
+static inline
 Vec3 Vec3_Normalize(Vec3 this)
 {
 	return Vec3_Div2(this, MATH_Sqrt((this.x * this.x) + (this.y * this.y) + (this.z * this.z)));
 }
 
-inline
+static inline
 Vec3 Vec3_Reflect(Vec3 this, Vec3 planeNormal)
 {
 	return Vec3_Sub(this, Vec3_Mul2(planeNormal, Vec3_Dot2(this, planeNormal) * 2));
 }
 
-inline
+static inline
 Vec3 Vec3_Cross(Vec3 this, Vec3 vector)
 {
 	return Vec3_Constructor2(((this.y * vector.z) - (this.z * vector.y)), ((this.z * vector.x) - (this.x * vector.z)), ((this.x * vector.y) - (this.y * vector.x)));
 }
 
-inline
+static inline
 Num Vec3_FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 {
 	return MATH_Pow(1 - MATH_Max(Vec3_Dot2(Vec3_Neg(rayDirection), normal), 0), 5);
@@ -357,7 +359,7 @@ Sphere* Sphere_Constructor(Vec3 center, float radius, Material material)
 	return this;
 }
 
-inline
+static inline
 BOOL Sphere_HitSphere(Sphere* this, Ray* ray, HitInfo* info)
 {
 	return Ray_HitSphere(ray, this->center, this->radius, info);
@@ -510,13 +512,21 @@ typedef struct RenderThreadData
 
 typedef struct Thread
 {
+#ifdef _WIN32
 	thrd_t thread;
+#else
+	pthread_t thread;
+#endif
 }Thread;
 
-Thread Thread_Constructor(thrd_start_t func, RenderThreadData* data)
+Thread Thread_Constructor(ThreadResult (*func)(void*), RenderThreadData* data)
 {
 	Thread this;
+#ifdef _WIN32
 	thrd_create(&this.thread, func, data);
+#else
+	pthread_create(&this.thread, NULL, func, data);
+#endif
 	return this;
 }
 
@@ -548,7 +558,7 @@ typedef struct Benchmark
 Benchmark benchmark;
 
 // forward declare
-void Benchmark_RenderThread(void* dataObj);
+ThreadResult Benchmark_RenderThread(void* dataObj);
 void Benchmark_UpdateMovieObjects(int frame);
 RawMovie* Benchmark_Render(BOOL singleThreaded);
 BOOL Benchmark_IsInShadow(PointLight* pointLight, const Vec3* point, const Vec3* randomVec, Num* lightDis, Ray* lightRay);
@@ -570,11 +580,11 @@ void Benchmark_Init(int width, int height, int frames)
 	// init scene objects
 	benchmark.objectsLength = 5;
 	benchmark.objects = malloc(sizeof(Obj*) * benchmark.objectsLength);
-	benchmark.objects[0] = Plane_Constructor(Vec3_Constructor2(0, -.4f, 0), Vec3_Constructor2(0, 1, 0), Material_Constructor2(Color_Constructor2(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
-	benchmark.objects[1] = Sphere_Constructor(Vec3_Constructor2(0, 0, -2), .33f, Material_Constructor2(Color_Constructor2(1, 0, 0), 0 * roughnessMul, .25f, 0));
-	benchmark.objects[2] = Sphere_Constructor(Vec3_Constructor2(-.25f, .5f, -1.5f), .25f, Material_Constructor2(Color_Constructor2(0, 1, 0), 0 * roughnessMul, 1, 1));
-	benchmark.objects[3] = Sphere_Constructor(Vec3_Constructor2(1, -.75f, -2), 1, Material_Constructor2(Color_Constructor2(0, 0, 1), 0 * roughnessMul, 1, 1));
-	benchmark.objects[4] = Sphere_Constructor(Vec3_Constructor2(.2f, .25f, -1.5f), .1f, Material_Constructor2(Color_Constructor2(1, 1, 0), 0 * roughnessMul, 1, .5f));
+	benchmark.objects[0] = (Obj*)Plane_Constructor(Vec3_Constructor2(0, -.4f, 0), Vec3_Constructor2(0, 1, 0), Material_Constructor2(Color_Constructor2(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
+	benchmark.objects[1] = (Obj*)Sphere_Constructor(Vec3_Constructor2(0, 0, -2), .33f, Material_Constructor2(Color_Constructor2(1, 0, 0), 0 * roughnessMul, .25f, 0));
+	benchmark.objects[2] = (Obj*)Sphere_Constructor(Vec3_Constructor2(-.25f, .5f, -1.5f), .25f, Material_Constructor2(Color_Constructor2(0, 1, 0), 0 * roughnessMul, 1, 1));
+	benchmark.objects[3] = (Obj*)Sphere_Constructor(Vec3_Constructor2(1, -.75f, -2), 1, Material_Constructor2(Color_Constructor2(0, 0, 1), 0 * roughnessMul, 1, 1));
+	benchmark.objects[4] = (Obj*)Sphere_Constructor(Vec3_Constructor2(.2f, .25f, -1.5f), .1f, Material_Constructor2(Color_Constructor2(1, 1, 0), 0 * roughnessMul, 1, .5f));
 
 	// init scene lights
 	benchmark.ambientLight = Color_Constructor2(.05f, .05f, .05f);
@@ -703,7 +713,7 @@ void Benchmark_UpdateMovieObjects(int frame)
 	Camera_Update(benchmark.camera);
 }
 
-void Benchmark_RenderThread(void* dataObj)
+ThreadResult Benchmark_RenderThread(void* dataObj)
 {
 	RenderThreadData* data = (RenderThreadData*)dataObj;
 
@@ -711,7 +721,7 @@ void Benchmark_RenderThread(void* dataObj)
 	{
 		// wait for main thread to trigger
 		while (data->waiting) Sleep(1);
-		if (data->done) return;
+		if (data->done) return 0;
 
 		// setup ray
 		Ray ray;
@@ -746,6 +756,7 @@ void Benchmark_RenderThread(void* dataObj)
 		data->done = TRUE;
 		data->waiting = TRUE;
 	}
+	return 0;
 }
 
 BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomVec)
@@ -798,7 +809,7 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 	if (closestObject != NULL)
 	{
 		if (*maxBounce <= 0) return FALSE;
-		*maxBounce--;
+		(*maxBounce)--;
 		int maxBounceReset = *maxBounce;
 
 		// buffer diffuse pass state objects

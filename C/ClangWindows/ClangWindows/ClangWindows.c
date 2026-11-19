@@ -1,5 +1,3 @@
-#define WINDOWS
-#define inline __inline
 #include "../../Common/Benchmark_Main.h"
 
 #include <stdio.h>

@@ -1,2 +1,2 @@
 mkdir bin
-clang -std=c11 -O3 -flto -DWIN32_CLANG Clang.c -o ./bin/Benchmark
+clang -std=c11 -O3 -flto -fuse-ld=lld Clang.c -o ./bin/Benchmark.exe
