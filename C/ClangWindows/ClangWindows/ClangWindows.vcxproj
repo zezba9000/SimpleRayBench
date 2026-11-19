@@ -272,6 +272,11 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release' And '$(PlatformToolset)'=='ClangCL'">
+    <ClCompile>
+      <AdditionalOptions>/clang:-fno-math-errno %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ClangWindows.c" />
   </ItemGroup>

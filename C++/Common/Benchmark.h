@@ -1,5 +1,6 @@
 #pragma once
 #include "LangUtils.h"
+#include <atomic>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -617,21 +618,19 @@ namespace SimpleRayBench
 		static RawMovie* Render(bool singleThreaded)
 		{
 			int workerCount = singleThreaded ? 1 : threadCount;
+			std::atomic<int> nextFrame{0};
 			std::vector<std::thread> threads;
 			threads.reserve(workerCount - 1);
 
-			// each thread renders complete frames, interleaved across the movie
-			int i = 1;
 			try
 			{
-				for (; i < workerCount; ++i) threads.emplace_back(RenderThread, i, workerCount);
+				for (int i = 1; i < workerCount; ++i) threads.emplace_back(RenderThread, &nextFrame);
 			}
 			catch (const std::system_error&)
 			{
-				// The calling thread renders any ranges whose worker could not start.
+				// The calling thread and any started workers drain the frame queue.
 			}
-			for (; i < workerCount; ++i) RenderThread(i, workerCount);
-			RenderThread(0, workerCount);
+			RenderThread(&nextFrame);
 			for (auto& thread : threads) thread.join();
 
 			return movie.get();
@@ -655,7 +654,7 @@ namespace SimpleRayBench
 			camera.Update();
 		}
 
-		static void RenderThread(int index, int step)
+		static void RenderThread(std::atomic<int>* nextFrame)
 		{
 			Camera camera(Vec3(0, 0, 0), Vec3(0, 0, -1), Vec3(0, 1, 0));
 			PointLight pointLights[pointLightsLength] =
@@ -665,7 +664,9 @@ namespace SimpleRayBench
 			Num widthRange = (Num)(width - 1);
 			Num heightRange = (Num)(height - 1);
 
-			for (int f = index; f < frames; f += step)
+			// claim a complete frame when this worker is ready
+			int f;
+			while ((f = nextFrame->fetch_add(1, std::memory_order_relaxed)) >= 0 && f < frames)
 			{
 				std::printf("Frame:%d rendering\n", f);
 				std::fflush(stdout);

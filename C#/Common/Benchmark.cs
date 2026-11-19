@@ -641,14 +641,14 @@ namespace SimpleRayBench
 				Vec3 rayOrigin = camera.position;
 				Mat3 camMatrix = camera.matrix;
 				var colors = movie.frames[f].colors;
-				int pixel = 0;
 				// each frame has its own random sequence regardless of which worker renders it
 				Num ox = f * .5f;
 				Num oy = f * .75f;
 				for (int y = 0; y < height; ++y)
 				{
+					var row = colors.AsSpan(y * width, width);
 					Num yNorm = y / heightRange;
-					for (int x = 0; x < width; ++x)
+					for (int x = 0; x < row.Length; ++x)
 					{
 						Num xNorm = x / widthRange;
 						Vec3 rayDirection = new Vec3(xNorm - .5f, yNorm - .5f, -1).Normalize();
@@ -663,7 +663,7 @@ namespace SimpleRayBench
 						Trace(rayOrigin, rayDirection, ref light, maxBounceCount, randomVec, objs, lights, ambient);
 
 						// write result
-						colors[pixel++] = light;
+						row[x] = light;
 					}
 				}
 			}
