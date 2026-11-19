@@ -24,12 +24,6 @@ typedef int BOOL;
 #define FALSE 0
 #define TRUE 1
 typedef void* ThreadResult;
-
-void Sleep(int milliseconds)
-{
-	struct timespec duration = { milliseconds / 1000, (milliseconds % 1000) * 1000000L };
-	nanosleep(&duration, NULL);
-}
 #endif
 
 #if defined(NUM64)

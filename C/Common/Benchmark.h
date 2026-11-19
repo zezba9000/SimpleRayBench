@@ -18,19 +18,18 @@ typedef struct RandomUtil
 {
 	Num offsetX, offsetY;
 }RandomUtil;
-RandomUtil _RandomUtil;
 
 static inline
-Num RandomUtil_NextValue(Num u, Num v)
+Num RandomUtil_NextValue(RandomUtil* this, Num u, Num v)
 {
 	#define randoValueX 12.9898f
 	#define randoValueY 78.233f
 	#define randoValueZ 43758.543123f
 
-	u += _RandomUtil.offsetX;
-	v += _RandomUtil.offsetY;
-	_RandomUtil.offsetX += .5f;
-	_RandomUtil.offsetY += .75f;
+	u += this->offsetX;
+	v += this->offsetY;
+	this->offsetX += .5f;
+	this->offsetY += .75f;
 
 	Num result = (u * randoValueX) + (v * randoValueY);
 	result = MATH_Sin(result) * randoValueZ;
@@ -218,7 +217,9 @@ Vec3 Vec3_Cross(Vec3 this, Vec3 vector)
 static inline
 Num Vec3_FresnelSchlickZero(Vec3 rayDirection, Vec3 normal)
 {
-	return MATH_Pow(1 - MATH_Max(Vec3_Dot2(Vec3_Neg(rayDirection), normal), 0), 5);
+	Num value = 1 - MATH_Max(Vec3_Dot2(Vec3_Neg(rayDirection), normal), 0);
+	Num squared = value * value;
+	return squared * squared * value;
 }
 
 typedef struct Mat3
@@ -265,35 +266,33 @@ Ray Ray_Constructor2(Vec3 origin, Vec3 direction)
 	return this;
 }
 
+static inline
+BOOL Ray_HitSphereNumerator(const Ray* this, Vec3 sphereCenter, Num sphereRadius, Num a, Num* numerator)
+{
+	Vec3 d = Vec3_Sub(this->origin, sphereCenter);
+	Num b = Vec3_Dot2(d, this->direction);
+	if (b >= 0) return FALSE;
+
+	Num c = Vec3_Dot(d) - sphereRadius * sphereRadius;
+	Num disc = b * b - a * c;
+	if (disc < 0) return FALSE;
+
+	*numerator = -b - MATH_Sqrt(disc);
+	return TRUE;
+}
+
 BOOL Ray_HitSphere(Ray* this, Vec3 sphereCenter, Num sphereRadius, HitInfo* info)
 {
-	// if ray pointing wrong direction ignore
-	if (Vec3_Dot2(this->direction, Vec3_Sub(this->origin, sphereCenter)) >= 0)
+	Num a = Vec3_Dot(this->direction);
+	Num numerator;
+	if (!Ray_HitSphereNumerator(this, sphereCenter, sphereRadius, a, &numerator))
 	{
 		*info = HitInfo_Constructor();
 		return FALSE;
 	}
 
-	// compute
-	Vec3 d = Vec3_Sub(this->origin, sphereCenter);
-	Num a = Vec3_Dot2(this->direction, this->direction);
-	Num b = Vec3_Dot2(d, this->direction);
-	Num c = Vec3_Dot(d) - sphereRadius * sphereRadius;
-
-	// if ray not pointing at object ignore
-	Num disc = b * b - a * c;
-	if (disc < 0)
-	{
-		*info = HitInfo_Constructor();
-		return FALSE;
-	}
-
-	// compute
-	Num sqrtDisc = MATH_Sqrt(disc);
-	Num invA = 1 / a;
-	Num t1 = (-b - sqrtDisc) * invA;
-
-	info->point = Vec3_Add(this->origin, Vec3_Mul3(t1, this->direction));
+	Num t = numerator * (1 / a);
+	info->point = Vec3_Add(this->origin, Vec3_Mul3(t, this->direction));
 	info->normal = Vec3_Normalize(Vec3_Sub(info->point, sphereCenter));
 
 	return TRUE;
@@ -371,6 +370,8 @@ typedef struct Plane
 	Vec3 center, normal;
 }Plane;
 
+static const Num planeParallelThreshold = .0001f;
+
 Plane* Plane_Constructor(Vec3 center, Vec3 normal, Material material)
 {
 	Plane* this = malloc(sizeof(Plane));
@@ -383,16 +384,8 @@ Plane* Plane_Constructor(Vec3 center, Vec3 normal, Material material)
 
 BOOL Plane_HitPlane(Plane* this, Ray* ray, HitInfo* info)
 {
-	// if ray pointing wrong direction ignore
-	if (Vec3_Dot2(ray->direction, this->normal) >= 0)
-	{
-		*info = HitInfo_Constructor();
-		return FALSE;
-	}
-
 	Num denom = Vec3_Dot2(this->normal, ray->direction);
-	float value = MATH_Abs(denom);
-	if (MATH_Abs(denom) > 0.0001f)
+	if (denom < -planeParallelThreshold)
 	{
 		Num t = Vec3_Dot2(Vec3_Sub(this->center, ray->origin), this->normal) / denom;
 		if (t >= 0)
@@ -447,7 +440,7 @@ RawMovie* RawMovie_Constructor(int width, int height, int frameCount)
 	this->width = width;
 	this->height = height;
 	this->frameCount = frameCount;
-	this->frames = malloc(sizeof(RawImage) * frameCount);
+	this->frames = malloc(sizeof(RawImage*) * frameCount);
 	for (int i = 0; i != frameCount; ++i)
 	{
 		this->frames[i] = RawImage_Constructor(width, height);
@@ -490,25 +483,17 @@ typedef struct PointLight
 	Num rotSpeed;
 }PointLight;
 
-PointLight* PointLight_Constructor(Vec3 position, Num radius, Color color, Num rotSpeed)
+PointLight PointLight_Constructor(Vec3 position, Num radius, Color color, Num rotSpeed)
 {
-	PointLight* this = malloc(sizeof(PointLight));
-	this->position = position;
-	this->radius = radius;
-	this->color = color;
+	PointLight this;
+	this.position = position;
+	this.radius = radius;
+	this.color = color;
 
-	this->rotPos = position;
-	this->rotSpeed = rotSpeed;
+	this.rotPos = position;
+	this.rotSpeed = rotSpeed;
 	return this;
 }
-
-typedef struct RenderThreadData
-{
-	int index, randomIndex;
-	BOOL waiting, done, exit;
-	int x, y, xEnd, yEnd;
-	RawImage* image;
-}RenderThreadData;
 
 typedef struct Thread
 {
@@ -519,16 +504,32 @@ typedef struct Thread
 #endif
 }Thread;
 
-Thread Thread_Constructor(ThreadResult (*func)(void*), RenderThreadData* data)
+typedef struct RenderThreadData
 {
-	Thread this;
+	int index, step;
+	Thread thread;
+	BOOL started;
+}RenderThreadData;
+
+BOOL Thread_Start(Thread* this, ThreadResult (*func)(void*), RenderThreadData* data)
+{
 #ifdef _WIN32
-	thrd_create(&this.thread, func, data);
+	return thrd_create(&this->thread, func, data) == thrd_success;
 #else
-	pthread_create(&this.thread, NULL, func, data);
+	return pthread_create(&this->thread, NULL, func, data) == 0;
 #endif
-	return this;
 }
+
+void Thread_Join(Thread* this)
+{
+#ifdef _WIN32
+	thrd_join(this->thread, NULL);
+#else
+	pthread_join(this->thread, NULL);
+#endif
+}
+
+enum { objectCount = 5, pointLightCount = 1 };
 
 typedef struct Benchmark
 {
@@ -544,26 +545,21 @@ typedef struct Benchmark
 	int width, height, frames;
 	RawMovie* movie;
 	Camera* camera;
-	int objectsLength;
-	Obj** objects;
+	Obj* objects[objectCount];
 	Color ambientLight;
-	int pointLightsLength;
-	PointLight** pointLights;
+	PointLight pointLights[pointLightCount];
 
 	int threadCount;
-	RenderThreadData** threadDatas;
-	Thread* threads;
-	BOOL threadsAlive;
 }Benchmark;
 Benchmark benchmark;
 
 // forward declare
 ThreadResult Benchmark_RenderThread(void* dataObj);
-void Benchmark_UpdateMovieObjects(int frame);
+void Benchmark_UpdateMovieObjects(Camera* camera, PointLight* pointLights, int frame);
 RawMovie* Benchmark_Render(BOOL singleThreaded);
-BOOL Benchmark_IsInShadow(PointLight* pointLight, const Vec3* point, const Vec3* randomVec, Num* lightDis, Ray* lightRay);
-BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomVec);
-void Benchmark_GatherLight(Obj* obj, const HitInfo* info, Color* light, const Vec3* randomVec);
+BOOL Benchmark_IsInShadow(Vec3 lightPosition, Vec3 point, Num* lightDis, Vec3* lightDirection);
+BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomVec, const PointLight* pointLights);
+void Benchmark_GatherLight(Obj* obj, const HitInfo* info, Color* light, const Vec3* randomVec, const PointLight* pointLights);
 
 void Benchmark_Init(int width, int height, int frames)
 {
@@ -576,10 +572,9 @@ void Benchmark_Init(int width, int height, int frames)
 
 	// init camera
 	benchmark.camera = Camera_Constructor(Vec3_Constructor2(0, 0, 0), Vec3_Constructor2(0, 0, -1), Vec3_Constructor2(0, 1, 0));
+	Camera_Update(benchmark.camera);
 
 	// init scene objects
-	benchmark.objectsLength = 5;
-	benchmark.objects = malloc(sizeof(Obj*) * benchmark.objectsLength);
 	benchmark.objects[0] = (Obj*)Plane_Constructor(Vec3_Constructor2(0, -.4f, 0), Vec3_Constructor2(0, 1, 0), Material_Constructor2(Color_Constructor2(.3f, .3f, .3f), 0.03f * roughnessMul, 1, 0));
 	benchmark.objects[1] = (Obj*)Sphere_Constructor(Vec3_Constructor2(0, 0, -2), .33f, Material_Constructor2(Color_Constructor2(1, 0, 0), 0 * roughnessMul, .25f, 0));
 	benchmark.objects[2] = (Obj*)Sphere_Constructor(Vec3_Constructor2(-.25f, .5f, -1.5f), .25f, Material_Constructor2(Color_Constructor2(0, 1, 0), 0 * roughnessMul, 1, 1));
@@ -588,119 +583,65 @@ void Benchmark_Init(int width, int height, int frames)
 
 	// init scene lights
 	benchmark.ambientLight = Color_Constructor2(.05f, .05f, .05f);
-	benchmark.pointLightsLength = 1;
-	benchmark.pointLights = malloc(sizeof(PointLight*) * benchmark.pointLightsLength);
 	benchmark.pointLights[0] = PointLight_Constructor(Vec3_Constructor2(.1f, .75f, -2), .01f, Color_Mul2(Color_Constructor2(1, 1, 1), 10), 1);
 
-	// start threads
-	benchmark.threadsAlive = TRUE;
+	// choose the number of render threads
 	benchmark.threadCount = Environment_ProcessorCount();
+	if (benchmark.threadCount < 1) benchmark.threadCount = 1;
+	if (benchmark.threadCount > frames) benchmark.threadCount = frames;
 	printf("Thread Count: %d\n", benchmark.threadCount);
-	benchmark.threadDatas = malloc(sizeof(RenderThreadData*) * benchmark.threadCount);
-	benchmark.threads = malloc(sizeof(Thread) * benchmark.threadCount);
-	for (int i = 0; i != benchmark.threadCount; ++i)
-	{
-		int sectionHeight = height / benchmark.threadCount;
-		benchmark.threadDatas[i] = malloc(sizeof(RenderThreadData));
-		benchmark.threadDatas[i]->exit = FALSE;
-		benchmark.threadDatas[i]->waiting = TRUE;
-		benchmark.threadDatas[i]->done = FALSE;
-		benchmark.threadDatas[i]->index = i,
-		benchmark.threadDatas[i]->randomIndex = i % benchmark.threadCount,
-		benchmark.threadDatas[i]->x = 0,
-		benchmark.threadDatas[i]->y = i * sectionHeight,
-		benchmark.threadDatas[i]->xEnd = width,
-		benchmark.threadDatas[i]->yEnd = (i * sectionHeight) + sectionHeight;
-		if (i == benchmark.threadCount - 1) benchmark.threadDatas[i]->yEnd = height;
-		benchmark.threads[i] = Thread_Constructor(Benchmark_RenderThread, benchmark.threadDatas[i]);
-	}
 }
 
 void Benchmark_Dispose()
 {
-	for (int i = 0; i != benchmark.threadCount; ++i)
+	for (int i = 0; i != benchmark.frames; ++i)
 	{
-		RenderThreadData* data = benchmark.threadDatas[i];
-		data->exit = TRUE;
-		data->done = TRUE;
-		data->waiting = FALSE;
+		free(benchmark.movie->frames[i]->colors);
+		free(benchmark.movie->frames[i]);
 	}
+	free(benchmark.movie->frames);
+	free(benchmark.movie);
+
+	for (int i = 0; i != objectCount; ++i) free(benchmark.objects[i]);
+	free(benchmark.camera);
 }
 
 RawMovie* Benchmark_Render(BOOL singleThreaded)
 {
-	if (singleThreaded)
+	int threadCount = singleThreaded ? 1 : benchmark.threadCount;
+	RenderThreadData* threadDatas = NULL;
+	if (threadCount > 1) threadDatas = malloc(sizeof(RenderThreadData) * (threadCount - 1));
+	if (threadDatas == NULL) threadCount = 1;
+
+	RenderThreadData mainThread = {0};
+	mainThread.step = threadCount;
+
+	// each thread renders complete frames, interleaved across the movie
+	for (int i = 1; i < threadCount; ++i)
 	{
-		// render frames
-		Num widthRange = benchmark.width - 1;
-		Num heightRange = benchmark.height - 1;
-		for (int f = 0; f != benchmark.frames; ++f)
-		{
-			printf("Frame: %d rendering\n", f);
-			Benchmark_UpdateMovieObjects(f);
-			Ray ray;
-			ray.origin = benchmark.camera->position;
-			Color* colors = benchmark.movie->frames[f]->colors;
-			for (int y = 0; y != benchmark.height; ++y)
-			{
-				for (int x = 0; x != benchmark.width; ++x)
-				{
-					ray.direction = Vec3_Normalize(Vec3_Constructor2((x / (Num)(benchmark.width - 1)) - .5f, (y / (Num)(benchmark.height - 1)) - .5f, -1));
-					ray.direction = Mat3_Transform(benchmark.camera->matrix, ray.direction);
-
-					// generate shared random vector
-					Num randomVal = RandomUtil_NextValue(x / widthRange, y / heightRange);
-					Vec3 randomVec = Vec3_Sub2(Vec3_Constructor2(randomVal, randomVal, randomVal), .5f);
-
-					// trace
-					int maxBounce = maxBounceCount;
-					Color light = Color_Constructor();
-					Benchmark_Trace(&ray, &light, &maxBounce, &randomVec);
-
-					// write result
-					colors[x + (y * benchmark.width)] = light;
-					if (light.r != 0)
-					{ }
-				}
-			}
-		}
+		RenderThreadData* data = &threadDatas[i - 1];
+		data->index = i;
+		data->step = threadCount;
+		data->started = Thread_Start(&data->thread, Benchmark_RenderThread, data);
 	}
-	else
+	Benchmark_RenderThread(&mainThread);
+	for (int i = 1; i < threadCount; ++i)
 	{
-		// render frames
-		for (int f = 0; f != benchmark.frames; ++f)
-		{
-			printf("Frame: %d rendering\n", f);
-			Benchmark_UpdateMovieObjects(f);
-			RawImage* frame = benchmark.movie->frames[f];
-
-			// tell threads to start processing task
-			for (int i = 0; i != benchmark.threadCount; ++i)
-			{
-				RenderThreadData* data = benchmark.threadDatas[i];
-				data->image = frame;
-				data->done = FALSE;
-				data->waiting = FALSE;
-			}
-
-			// wait for all threads to finish
-			for (int i = 0; i != benchmark.threadCount; ++i)
-			{
-				RenderThreadData* data = benchmark.threadDatas[i];
-				while (!data->done) Sleep(1);
-			}
-		}
+		RenderThreadData* data = &threadDatas[i - 1];
+		if (data->started) Thread_Join(&data->thread);
+		else Benchmark_RenderThread(data);
 	}
+	free(threadDatas);
 
 	return benchmark.movie;
 }
 
-void Benchmark_UpdateMovieObjects(int frame)
+void Benchmark_UpdateMovieObjects(Camera* camera, PointLight* pointLights, int frame)
 {
 	Num rot = frame * .1f;
-	for (int l = 0; l != benchmark.pointLightsLength; ++l)
+	for (int l = 0; l != pointLightCount; ++l)
 	{
-		PointLight* pointLight = benchmark.pointLights[l];
+		PointLight* pointLight = &pointLights[l];
 		Num r = rot * pointLight->rotSpeed;
 		pointLight->position = Vec3_Add(pointLight->rotPos, Vec3_Mul2(Vec3_Constructor2(MATH_Cos(r), MATH_Sin(r) * 4, MATH_Sin(r) * 3), .1f));
 		pointLight->color = Color_Constructor2(MATH_Abs(MATH_Cos(r)) * 10, MATH_Abs(MATH_Sin(r)) * 10, MATH_Abs(MATH_Cos(r * .33f) * 10));
@@ -708,64 +649,93 @@ void Benchmark_UpdateMovieObjects(int frame)
 
 	Num c = -rot * .25f;
 	Vec3 center = Vec3_Constructor2(0, 0, -2);
-	benchmark.camera->position = Vec3_Add(center, Vec3_Mul2(Vec3_Constructor2(MATH_Sin(c), MATH_Sin(c) * .1f, -MATH_Cos(c)), 2));
-	benchmark.camera->forward = Vec3_Normalize(Vec3_Sub(center, benchmark.camera->position));
-	Camera_Update(benchmark.camera);
+	camera->position = Vec3_Add(center, Vec3_Mul2(Vec3_Constructor2(MATH_Sin(c), MATH_Sin(c) * .1f, -MATH_Cos(c)), 2));
+	camera->forward = Vec3_Normalize(Vec3_Sub(center, camera->position));
+	Camera_Update(camera);
 }
 
 ThreadResult Benchmark_RenderThread(void* dataObj)
 {
 	RenderThreadData* data = (RenderThreadData*)dataObj;
+	Camera camera = *benchmark.camera;
+	PointLight pointLights[pointLightCount];
+	for (int l = 0; l != pointLightCount; ++l) pointLights[l] = benchmark.pointLights[l];
+	Num widthRange = (Num)(benchmark.width - 1);
+	Num heightRange = (Num)(benchmark.height - 1);
 
-	while (!data->exit)
+	for (int f = data->index; f < benchmark.frames; f += data->step)
 	{
-		// wait for main thread to trigger
-		while (data->waiting) Sleep(1);
-		if (data->done) return 0;
+		printf("Frame: %d rendering\n", f);
+		Benchmark_UpdateMovieObjects(&camera, pointLights, f);
 
-		// setup ray
+		// each frame has its own random sequence regardless of which thread renders it
+		RandomUtil random = {f * .5f, f * .75f};
 		Ray ray;
-		ray.origin = benchmark.camera->position;
-
-		// render image section
-		Color* colors = data->image->colors;
-		Num widthRange = benchmark.width - 1;
-		Num heightRange = benchmark.height - 1;
-		for (int y = data->y; y < data->yEnd; ++y)
+		ray.origin = camera.position;
+		Color* colors = benchmark.movie->frames[f]->colors;
+		for (int y = 0; y < benchmark.height; ++y)
 		{
-			for (int x = data->x; x < data->xEnd; ++x)
+			Num v = y / heightRange;
+			for (int x = 0; x < benchmark.width; ++x)
 			{
-				ray.direction = Vec3_Normalize(Vec3_Constructor2((x / (Num)(benchmark.width - 1)) - .5f, (y / (Num)(benchmark.height - 1)) - .5f, -1));
-				ray.direction = Mat3_Transform(benchmark.camera->matrix, ray.direction);
+				Num u = x / widthRange;
+				ray.direction = Vec3_Normalize(Vec3_Constructor2(u - .5f, v - .5f, -1));
+				ray.direction = Mat3_Transform(camera.matrix, ray.direction);
 
-				// generate shared random vector
-				Num randomVal = RandomUtil_NextValue(x / widthRange, y / heightRange);
-				Vec3 randomVec = Vec3_Sub2(Vec3_Constructor2(randomVal, randomVal, randomVal), .5f);
+				// generate random vector
+				Num randomVal = RandomUtil_NextValue(&random, u, v) - .5f;
+				Vec3 randomVec = Vec3_Constructor2(randomVal, randomVal, randomVal);
 
 				// trace
 				int maxBounce = maxBounceCount;
 				Color light = Color_Constructor();
-				Benchmark_Trace(&ray, &light, &maxBounce, &randomVec);
+				Benchmark_Trace(&ray, &light, &maxBounce, &randomVec, pointLights);
 
 				// write result
-				colors[x + (y * benchmark.width)] = light;
+				*colors++ = light;
 			}
 		}
-
-		// tell main thread we're done
-		data->done = TRUE;
-		data->waiting = TRUE;
 	}
 	return 0;
 }
 
-BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomVec)
+static inline
+Num Benchmark_LightFalloff(Num lightDis)
+{
+	Num value = lightDis + 1;
+	Num squared = value * value;
+	return squared * squared;
+}
+
+#if !DISABLE_FOG
+static inline
+void Benchmark_GatherFog(const Ray* ray, Color* light, const Vec3* randomVec, int steps, const PointLight* pointLights)
+{
+	Vec3 fogStep = Vec3_Mul2(ray->direction, volumeFogStep);
+	for (int l = 0; l != pointLightCount; ++l)
+	{
+		Vec3 fogPos = ray->origin;
+		Num fogBrightness = 0;
+		const PointLight* pointLight = &pointLights[l];
+		Vec3 lightPosition = Vec3_Add(pointLight->position, Vec3_Mul2(*randomVec, pointLight->radius));
+		for (int i = 0; i != steps; ++i)
+		{
+			fogPos = Vec3_Add(fogPos, fogStep);
+			Num lightDis;
+			if (!Benchmark_IsInShadow(lightPosition, fogPos, &lightDis, NULL)) fogBrightness += 1 / Benchmark_LightFalloff(lightDis);
+		}
+		*light = Color_Add(*light, Color_Mul2(pointLight->color, fogBrightness * volumeFogStep * .1f));
+	}
+}
+#endif
+
+BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomVec, const PointLight* pointLights)
 {
 	// find closes object
 	Obj* closestObject = NULL;
 	Num closestDis = MATH_MaxValue();
 	HitInfo closestInfo = HitInfo_Constructor();
-	for (int o = 0; o != benchmark.objectsLength; ++o)
+	for (int o = 0; o != objectCount; ++o)
 	{
 		Obj* obj = benchmark.objects[o];
 		HitInfo info;
@@ -782,10 +752,10 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 	}
 
 	// hit point light orb
-	for (int l = 0; l != benchmark.pointLightsLength; ++l)
+	for (int l = 0; l != pointLightCount; ++l)
 	{
-		PointLight* pointLight = benchmark.pointLights[l];
-		PointLight* closestLight = NULL;
+		const PointLight* pointLight = &pointLights[l];
+		const PointLight* closestLight = NULL;
 		HitInfo info;
 		if (Ray_HitSphere(ray, pointLight->position, pointLight->radius, &info))
 		{
@@ -822,12 +792,12 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 		reflectedRay.origin = Vec3_Sub(closestInfo.point, Vec3_Mul2(reflectedRay.direction, .0001f));// move a little off surface to correct for floating point errors
 
 		// gather surface light
-		Benchmark_GatherLight(closestObject, &reflectedClosestInfo, light, randomVec);
+		Benchmark_GatherLight(closestObject, &reflectedClosestInfo, light, randomVec, pointLights);
 
 		// trace from this reflected path
 		*maxBounce = maxBounceReset;// reset max bounce here or we lose light average consistancy
 		Color reflectedLight = Color_Constructor();
-		Benchmark_Trace(&reflectedRay, &reflectedLight, maxBounce, randomVec);
+		Benchmark_Trace(&reflectedRay, &reflectedLight, maxBounce, randomVec, pointLights);
 
 		// material (reflection)
 		Num fresnel = 1 - Vec3_FresnelSchlickZero(ray->direction, closestInfo.normal);
@@ -835,22 +805,8 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 
 		// volume fog tracing taking into account shadows
 		#if !DISABLE_FOG
-		Vec3 fogPos = ray->origin;
-		Vec3 fogStep = Vec3_Mul2(ray->direction, volumeFogStep);
 		int maxVolumeFogStepsClamped = (int)MATH_Min(closestDis / volumeFogStep, maxVolumeFogSteps);
-		for (int l = 0; l != benchmark.pointLightsLength; ++l)
-		{
-			Num fogBrightness = 0;
-			PointLight* pointLight = benchmark.pointLights[l];
-			for (int i = 0; i != maxVolumeFogStepsClamped; ++i)
-			{
-				fogPos = Vec3_Add(fogPos, fogStep);
-				Num lightDis;
-				Ray lightRay;
-				if (!Benchmark_IsInShadow(pointLight, &fogPos, randomVec, &lightDis, &lightRay)) fogBrightness += 1 / MATH_Pow(lightDis + 1, 4);
-			}
-			*light = Color_Add(*light, Color_Mul2(pointLight->color, fogBrightness * volumeFogStep * .1f));
-		}
+		Benchmark_GatherFog(ray, light, randomVec, maxVolumeFogStepsClamped, pointLights);
 		#endif
 				
 		return TRUE;
@@ -859,21 +815,7 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 	{
 		// volume fog tracing taking into account shadows (optimized for when nothing is hit)
 		#if !DISABLE_FOG
-		Vec3 fogPos = ray->origin;
-		Vec3 fogStep = Vec3_Mul2(ray->direction, volumeFogStep);
-		for (int l = 0; l != benchmark.pointLightsLength; ++l)
-		{
-			Num fogBrightness = 0;
-			PointLight* pointLight = benchmark.pointLights[l];
-			for (int i = 0; i != maxVolumeFogSteps; ++i)
-			{
-				fogPos = Vec3_Add(fogPos, fogStep);
-				Num lightDis;
-				Ray lightRay;
-				if (!Benchmark_IsInShadow(pointLight, &fogPos, randomVec, &lightDis, &lightRay)) fogBrightness += 1 / MATH_Pow(lightDis + 1, 4);
-			}
-			*light = Color_Add(*light, Color_Mul2(pointLight->color, fogBrightness * volumeFogStep * .1f));
-		}
+		Benchmark_GatherFog(ray, light, randomVec, maxVolumeFogSteps, pointLights);
 		#endif
 	}
 
@@ -881,7 +823,7 @@ BOOL Benchmark_Trace(Ray* ray, Color* light, int* maxBounce, const Vec3* randomV
 	return FALSE;
 }
 
-void Benchmark_GatherLight(Obj* obj, const HitInfo* info, Color* light, const Vec3* randomVec)
+void Benchmark_GatherLight(Obj* obj, const HitInfo* info, Color* light, const Vec3* randomVec, const PointLight* pointLights)
 {
 	Color objColor = obj->material.color;
 
@@ -889,35 +831,56 @@ void Benchmark_GatherLight(Obj* obj, const HitInfo* info, Color* light, const Ve
 	*light = Color_Add(*light, Color_Mul(objColor, benchmark.ambientLight));
 
 	// point
-	for (int l = 0; l != benchmark.pointLightsLength; ++l)
+	for (int l = 0; l != pointLightCount; ++l)
 	{
-		PointLight* pointLight = benchmark.pointLights[l];
+		const PointLight* pointLight = &pointLights[l];
 
 		// diffuse
+		Vec3 lightPosition = Vec3_Add(pointLight->position, Vec3_Mul2(*randomVec, pointLight->radius));
 		Num lightDis;
-		Ray lightRay;
-		if (!Benchmark_IsInShadow(benchmark.pointLights[l], &info->point, randomVec, &lightDis, &lightRay))
+		Vec3 lightDirection;
+		if (!Benchmark_IsInShadow(lightPosition, info->point, &lightDis, &lightDirection))
 		{
-			Num d = MATH_Max(Vec3_Dot2(info->normal, lightRay.direction), 0);
-			d /= MATH_Pow(lightDis + 1, 4);
+			Num d = MATH_Max(Vec3_Dot2(info->normal, lightDirection), 0);
+			d /= Benchmark_LightFalloff(lightDis);
 			*light = Color_Add(*light, Color_Mul2(Color_Mul(objColor, pointLight->color), d));
 		}
 	}
 }
 
-BOOL Benchmark_IsInShadow(PointLight* pointLight, const Vec3* point, const Vec3* randomVec, Num* lightDis, Ray* lightRay)
+BOOL Benchmark_IsInShadow(Vec3 lightPosition, Vec3 point, Num* lightDis, Vec3* lightDirection)
 {
-	Vec3 softVec = Vec3_Sub(Vec3_Add(pointLight->position, Vec3_Mul2(*randomVec, pointLight->radius)), *point);
-	*lightDis = Vec3_Length(softVec);
-	*lightRay = Ray_Constructor2(*point, Vec3_Normalize(softVec));
-	for (int o = 0; o != benchmark.objectsLength; ++o)
+	// use a ray whose parameter is 1 at the light, so shadow tests need no normalization
+	Ray lightRay = Ray_Constructor2(point, Vec3_Sub(lightPosition, point));
+	Num a = Vec3_Dot(lightRay.direction);
+	for (int o = 0; o != objectCount; ++o)
 	{
 		Obj* obj = benchmark.objects[o];
-		HitInfo hitInfo;
-		if (Obj_Hit(obj, lightRay, &hitInfo) && Vec3_Length(Vec3_Sub(hitInfo.point, *point)) <= *lightDis)
+		switch (obj->type)
 		{
-			return TRUE;
+			case ObjType_Sphere:
+			{
+				Sphere* sphere = (Sphere*)obj;
+				Num numerator;
+				// The hit parameter is numerator / a.
+				if (Ray_HitSphereNumerator(&lightRay, sphere->center, sphere->radius, a, &numerator) && MATH_Abs(numerator) <= a) return TRUE;
+				break;
+			}
+			case ObjType_Plane:
+			{
+				Plane* plane = (Plane*)obj;
+				Num denom = Vec3_Dot2(plane->normal, lightRay.direction);
+				if (denom < 0 && denom * denom > a * (planeParallelThreshold * planeParallelThreshold))
+				{
+					Num offset = Vec3_Dot2(Vec3_Sub(plane->center, point), plane->normal);
+					if (offset <= 0 && offset >= denom) return TRUE;
+				}
+				break;
+			}
 		}
 	}
+
+	*lightDis = MATH_Sqrt(a);
+	if (lightDirection != NULL) *lightDirection = Vec3_Div2(lightRay.direction, *lightDis);
 	return FALSE;
 }
